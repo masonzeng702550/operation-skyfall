@@ -1,11 +1,14 @@
 # Range stack. One per team:  docker compose -p team01 up -d
 #
 # Published to the player:
-#   ${TAP_PORT}/tcp   the man-in-the-middle tap — attach here to own the link
+#   ${TAP_PORT}/tcp   the man-in-the-middle tap — the only way onto the link
 #   ${VIZ_PORT}/tcp   read-only dual-view dashboard
-#   ${MAVLINK_PORT}/udp  direct MAVLink (warm-up challenge only)
 #
-# Never published: the watcher, the only container holding a flag.
+# The simulator's MAVLink port is deliberately NOT published. Talking to the
+# aircraft directly would skip the point of the exercise, so the only route to
+# it runs through the relay — which is to say, through the player.
+#
+# The watcher is not published either. It holds the only copy of the flag.
 
 services:
   sitl:
@@ -20,18 +23,12 @@ services:
       VIZ_HOST: viz
       HOME_LOC: "-35.363262,149.165237,584,0"
       SPEEDUP: "1"
-    ports:
-      - "${MAVLINK_PORT:-14550}:14550/udp"
     networks: [dronenet]
     depends_on: [watcher, viz]
 
-  # The simulator's udpin output remembers exactly one return address, so the
-  # relay and a direct q0 player cannot share it. These two services run only
-  # for the man-in-the-middle challenges:  docker compose --profile mitm up -d
   mitm:
     build: ./mitm
     image: thjcc/dronectf-mitm:1
-    profiles: [mitm]
     restart: unless-stopped
     environment:
       GCS_PORT: "14570"
@@ -46,7 +43,6 @@ services:
   gcs:
     build: ./gcs
     image: thjcc/dronectf-gcs:1
-    profiles: [mitm]
     restart: unless-stopped
     environment:
       UPLINK: "udpout:mitm:14570"
@@ -58,10 +54,9 @@ services:
 
   watcher:
     build: ./watcher
-    image: thjcc/dronectf-watcher:2
+    image: thjcc/dronectf-watcher:3
     restart: unless-stopped
     environment:
-      CHALLENGE: "${CHALLENGE:-q3}"
       # The flag exists ONLY here. A shell in sitl, mitm, gcs or viz gains nothing.
       #
       # static:  serves FLAG verbatim to everyone.
@@ -73,13 +68,9 @@ services:
       TEAM_ID: "${TEAM_ID:-solo}"
       HOME_LAT: "-35.363262"
       HOME_LON: "149.165237"
-      TARGET_LAT: "-35.363262"
-      TARGET_LON: "149.166537"
-      TARGET_RADIUS_M: "20"
-      TOUCHDOWN_AGL_M: "2.0"
-      MIN_FLIGHT_AGL_M: "10.0"
-      KILL_SILENCE_S: "5"
-      DECEPTION_HOLD_S: "10"
+      MIN_AGL_M: "5"
+      DIVERGENCE_M: "50"
+      HOLD_S: "10"
       VIZ_URL: "http://viz:8080/api/solved"
       SOLVE_TOKEN: "${SOLVE_TOKEN:-change-me-per-deployment}"
     networks: [dronenet]
@@ -87,15 +78,15 @@ services:
 
   viz:
     build: ./viz
-    image: thjcc/dronectf-viz:2
+    image: thjcc/dronectf-viz:3
     restart: unless-stopped
     environment:
-      CHALLENGE: "${CHALLENGE:-q3}"
       HOME_LAT: "-35.363262"
       HOME_LON: "149.165237"
       TARGET_LAT: "-35.363262"
       TARGET_LON: "149.166537"
       TARGET_RADIUS_M: "20"
+      DIVERGENCE_M: "50"
       SOLVE_TOKEN: "${SOLVE_TOKEN:-change-me-per-deployment}"
     ports:
       - "${VIZ_PORT:-8080}:8080"

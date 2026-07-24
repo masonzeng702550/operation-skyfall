@@ -21,7 +21,6 @@ from pymavlink import mavutil
 
 ENDPOINT = os.environ.get("VIZ_ENDPOINT", "udpin:0.0.0.0:14552")
 HTTP_PORT = int(os.environ.get("HTTP_PORT", "8080"))
-CHALLENGE = os.environ.get("CHALLENGE", "q0").lower()
 
 HOME_LAT = float(os.environ.get("HOME_LAT", "-35.363262"))
 HOME_LON = float(os.environ.get("HOME_LON", "149.165237"))
@@ -29,6 +28,7 @@ TGT_LAT = float(os.environ.get("TARGET_LAT", "-35.363262"))
 TGT_LON = float(os.environ.get("TARGET_LON", "149.166537"))
 TGT_RADIUS_M = float(os.environ.get("TARGET_RADIUS_M", "20"))
 SOLVE_TOKEN = os.environ.get("SOLVE_TOKEN", "change-me")
+DIVERGENCE_M = float(os.environ.get("DIVERGENCE_M", "50"))
 ENVELOPE_MARGIN_M = float(os.environ.get("ENVELOPE_MARGIN_M", "15"))
 
 MISSION = json.loads(os.environ.get("MISSION_JSON", json.dumps([
@@ -127,7 +127,7 @@ def verdict_for(truth, belief, payload):
     b_lat = belief.get("lat")
     if (b_lat is not None and truth["lat"] is not None
             and payload["divergence_m"] is not None
-            and payload["divergence_m"] > 25
+            and payload["divergence_m"] >= DIVERGENCE_M
             and belief.get("link_ok")):
         return "OPERATOR DECEIVED"
     if truth["lat"] is not None and not truth["in_envelope"]:
@@ -193,10 +193,10 @@ def mavlink_thread():
 
 
 CONFIG = {
-    "challenge": CHALLENGE,
     "home": [HOME_LAT, HOME_LON],
     "target": [TGT_LAT, TGT_LON],
     "target_radius_m": TGT_RADIUS_M,
+    "divergence_m": DIVERGENCE_M,
     "mission": MISSION,
 }
 
@@ -286,7 +286,7 @@ def main():
         "/", lambda r: web.FileResponse(os.path.join(STATIC_DIR, "index.html")))
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
-    print(f"[viz] http://0.0.0.0:{HTTP_PORT} (challenge {CHALLENGE})", flush=True)
+    print(f"[viz] http://0.0.0.0:{HTTP_PORT}", flush=True)
     web.run_app(app, host="0.0.0.0", port=HTTP_PORT, print=None)
 
 

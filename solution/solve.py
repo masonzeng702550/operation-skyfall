@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Q3 — Ghost in the Machine.
+"""Reference solution.
 
 Two jobs at once, in opposite directions.
 
@@ -16,7 +16,7 @@ against anything, so nothing we forge draws a complaint.
 The operator's screen stays green while the aircraft sits somewhere else
 entirely. That gap is the objective.
 
-    python3 q3_ghost.py --host <range-host> --port 14580
+    python3 solve.py --host <range-host> --port 14580
 """
 import argparse
 import math

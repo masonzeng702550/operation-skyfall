@@ -135,8 +135,13 @@
   /* ---------- flag burst ---------- */
   #burst {
     position: fixed; inset: 0; z-index: 50; display: none;
-    background: radial-gradient(circle at 50% 45%, rgba(60,0,20,.80), rgba(5,6,10,.95));
-    backdrop-filter: blur(3px);
+    /* Deliberately no backdrop-filter: several compositors flatten the layer
+       carrying it into a single averaged colour, which swallows the gradient
+       and leaves the flag sitting on a solid block. An opaque gradient gets
+       the same focus without depending on how the backdrop is composited. */
+    background-color: #0b070d;
+    background-image: radial-gradient(circle at 50% 45%, #4a0418 0%,
+                                      #1a0410 45%, #08070c 100%);
   }
   #burst.show { display: block; }
   #burstFx { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -568,9 +573,11 @@ function paint() {
                  'OBJECTIVE MET': '🚩', 'OUTSIDE AUTHORISED ENVELOPE': '⚠' }[v] || '·';
   b.className = cls;
   $('verdict').textContent = `${icon} ${v}`;
+  const need = CFG ? CFG.divergence_m : 50;
   $('meta').textContent =
-    `${CFG ? CFG.challenge.toUpperCase() : '—'} · truth ${T.truth.connected ? 'UP' : 'DOWN'}` +
-    ` · operator ${T.belief && T.belief.link_ok ? 'UP' : 'DOWN'}`;
+    `truth ${T.truth.connected ? 'UP' : 'DOWN'}` +
+    ` · operator ${T.belief && T.belief.link_ok ? 'UP' : 'DOWN'}` +
+    ` · target divergence ≥ ${need} m`;
 
   const bel = T.belief || {};
 
@@ -617,10 +624,11 @@ function paint() {
 
   const d = T.divergence_m;
   $('dval').textContent = d != null ? d.toFixed(1) + ' m' : '— m';
-  $('dfill').style.width = (d == null ? 0 : Math.min(100, d / 150 * 100)) + '%';
+  // Full bar at the scoring threshold, so the player can see how close they are.
+  $('dfill').style.width = (d == null ? 0 : Math.min(100, d / need * 100)) + '%';
   $('dfill').style.background = d == null ? '#3ddc97'
-      : (d > 25 ? '#ff4d6d' : d > 8 ? '#ffb84d' : '#3ddc97');
-  $('dval').className = d != null && d > 25 ? 'bad' : '';
+      : (d >= need ? '#ff4d6d' : d > need * 0.35 ? '#ffb84d' : '#3ddc97');
+  $('dval').className = d != null && d >= need ? 'bad' : '';
 
   if (T.flag) {
     $('flagbox').classList.add('show');
@@ -645,10 +653,17 @@ function fireBurst(flag, evidence) {
     ? Object.entries(evidence).map(([k, v]) => `${k} = ${v}`).join('   ·   ')
     : '';
   $('burst').classList.add('show');
+  // The overlay was display:none a moment ago, so its box is not laid out yet.
+  // Measuring now yields zero, which sizes the canvas to a single pixel and
+  // stretches it over the whole screen as one flat colour.
+  requestAnimationFrame(() => seedBurst());
+}
 
+function seedBurst() {
   const cv = $('burstFx');
   fitCanvas(cv);
   const W = cv.clientWidth, H = cv.clientHeight;
+  if (!W || !H) { requestAnimationFrame(seedBurst); return; }
   const cx0 = W / 2, cy0 = H * 0.47;
   const palette = ['#ff4d6d', '#ffb84d', '#3ddc97', '#4dabf7', '#ffffff'];
 
