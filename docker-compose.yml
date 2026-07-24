@@ -1,0 +1,94 @@
+# Range stack. One per team:  docker compose -p team01 up -d
+#
+# Published to the player:
+#   ${TAP_PORT}/tcp   the man-in-the-middle tap — attach here to own the link
+#   ${VIZ_PORT}/tcp   read-only dual-view dashboard
+#   ${MAVLINK_PORT}/udp  direct MAVLink (warm-up challenge only)
+#
+# Never published: the watcher, the only container holding a flag.
+
+services:
+  sitl:
+    build:
+      context: ./sitl
+      args:
+        ARDUPILOT_BRANCH: ${ARDUPILOT_BRANCH:-Copter-4.6.3}
+    image: thjcc/ardupilot-sitl:${ARDUPILOT_TAG:-4.6.3}
+    restart: unless-stopped
+    environment:
+      WATCHER_HOST: watcher
+      VIZ_HOST: viz
+      HOME_LOC: "-35.363262,149.165237,584,0"
+      SPEEDUP: "1"
+    ports:
+      - "${MAVLINK_PORT:-14550}:14550/udp"
+    networks: [dronenet]
+    depends_on: [watcher, viz]
+
+  mitm:
+    build: ./mitm
+    image: thjcc/dronectf-mitm:1
+    restart: unless-stopped
+    environment:
+      GCS_PORT: "14570"
+      UAV_HOST: sitl
+      UAV_PORT: "14550"
+      TAP_PORT: "14580"
+    ports:
+      - "${TAP_PORT:-14580}:14580"
+    networks: [dronenet]
+    depends_on: [sitl]
+
+  gcs:
+    build: ./gcs
+    image: thjcc/dronectf-gcs:1
+    restart: unless-stopped
+    environment:
+      UPLINK: "udpout:mitm:14570"
+      REUPLOAD_PERIOD_S: "60"
+      CRUISE_ALT: "30"
+      BELIEF_SINKS: "http://watcher:9000/api/belief,http://viz:8080/api/belief"
+    networks: [dronenet]
+    depends_on: [mitm]
+
+  watcher:
+    build: ./watcher
+    image: thjcc/dronectf-watcher:2
+    restart: unless-stopped
+    environment:
+      CHALLENGE: "${CHALLENGE:-q3}"
+      # The flag exists ONLY here. A shell in sitl, mitm, gcs or viz gains nothing.
+      FLAG: "${FLAG:-THJCC{set_a_real_flag_before_you_deploy_this}}"
+      HOME_LAT: "-35.363262"
+      HOME_LON: "149.165237"
+      TARGET_LAT: "-35.363262"
+      TARGET_LON: "149.166537"
+      TARGET_RADIUS_M: "20"
+      TOUCHDOWN_AGL_M: "2.0"
+      MIN_FLIGHT_AGL_M: "10.0"
+      KILL_SILENCE_S: "5"
+      DECEPTION_HOLD_S: "10"
+      VIZ_URL: "http://viz:8080/api/solved"
+      SOLVE_TOKEN: "${SOLVE_TOKEN:-change-me-per-deployment}"
+    networks: [dronenet]
+    # Deliberately NOT published.
+
+  viz:
+    build: ./viz
+    image: thjcc/dronectf-viz:2
+    restart: unless-stopped
+    environment:
+      CHALLENGE: "${CHALLENGE:-q3}"
+      HOME_LAT: "-35.363262"
+      HOME_LON: "149.165237"
+      TARGET_LAT: "-35.363262"
+      TARGET_LON: "149.166537"
+      TARGET_RADIUS_M: "20"
+      SOLVE_TOKEN: "${SOLVE_TOKEN:-change-me-per-deployment}"
+    ports:
+      - "${VIZ_PORT:-8080}:8080"
+    networks: [dronenet]
+
+networks:
+  dronenet:
+    driver: bridge

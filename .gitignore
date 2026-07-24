@@ -1,0 +1,27 @@
+# Deployment secrets
+.env
+*.env
+!example.env
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Simulator artefacts
+*.tlog
+*.tlog.raw
+*.bin
+*.BIN
+eeprom.bin
+mav.parm
+logs/
+terrain/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

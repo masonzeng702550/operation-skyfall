@@ -1,0 +1,12 @@
+# Challenge tuning for "No Handshake Required".
+# Arming checks are relaxed so competitors fight the protocol, not the EKF.
+ARMING_CHECK    0
+FENCE_ENABLE    0
+SIM_SPEEDUP     1
+# Keep the vehicle chatty so the watcher always has a position fix to score.
+SR0_POSITION    5
+SR0_EXTRA1      5
+SR1_POSITION    5
+SR1_EXTRA1      5
+SR2_POSITION    5
+SR2_EXTRA1      5

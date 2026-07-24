@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Range Telemetry</title>
+<style>
+  :root {
+    --bg: #0a0e14; --panel: #111820; --line: #1e2a38;
+    --fg: #c8d6e5; --dim: #5b7089;
+    --ok: #3ddc97; --warn: #ffb84d; --bad: #ff4d6d; --accent: #4dabf7;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--mono); font-size: 13px; overflow: hidden;
+  }
+  #banner {
+    padding: 10px 16px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; border-bottom: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  }
+  #banner.nominal { background: #0e2a20; color: var(--ok); }
+  #banner.warn    { background: #2e2410; color: var(--warn); }
+  #banner.bad     { background: #2e0f18; color: var(--bad); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .55; } }
+  #meta { font-weight: 400; letter-spacing: 0; font-size: 11px; opacity: .8; }
+
+  #wrap { display: flex; height: calc(100vh - 41px); }
+  #views { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #maps { flex: 1; display: flex; min-height: 0; }
+  .pane { flex: 1; position: relative; min-width: 0; }
+  .pane + .pane { border-left: 1px solid var(--line); }
+  .pane h3 {
+    position: absolute; top: 10px; left: 12px; margin: 0; z-index: 2;
+    font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+    font-weight: 600; pointer-events: none;
+  }
+  .pane h3 small { display: block; font-size: 9px; letter-spacing: .05em;
+                   text-transform: none; color: var(--dim); margin-top: 3px; }
+  #h-belief { color: var(--accent); }
+  #h-truth  { color: var(--ok); }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  #diverge {
+    flex: none; padding: 9px 16px; border-top: 1px solid var(--line);
+    background: var(--panel); display: flex; align-items: center; gap: 14px;
+  }
+  #dbar { flex: 1; height: 7px; background: #0c1219;
+          border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  #dfill { height: 100%; width: 0; background: var(--ok); transition: width .2s, background .2s; }
+  #dval { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 84px;
+          text-align: right; }
+
+  #side {
+    width: 254px; flex: none; border-left: 1px solid var(--line);
+    background: var(--panel); overflow-y: auto; padding: 14px;
+  }
+  h2 { margin: 0 0 9px; font-size: 10px; letter-spacing: .18em;
+       text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .row { display: flex; justify-content: space-between; gap: 8px;
+         padding: 4px 0; border-bottom: 1px solid #16202b; }
+  .row span:first-child { color: var(--dim); }
+  .row span:last-child { font-variant-numeric: tabular-nums; }
+  .big { font-size: 17px; font-weight: 700; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); }
+  .bad { color: var(--bad); } .accent { color: var(--accent); }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+  .legend { display: flex; align-items: center; gap: 7px; padding: 3px 0;
+            color: var(--dim); font-size: 11px; }
+  .sw { width: 11px; height: 11px; flex: none; border-radius: 2px; }
+  .note { color: var(--dim); font-size: 11px; line-height: 1.55; }
+  #flagbox { display: none; margin-bottom: 14px; padding: 12px;
+             border: 1px solid var(--bad); border-radius: 4px; background: #200c13; }
+  #flagbox.show { display: block; }
+  #flagval { color: var(--bad); font-size: 13px; font-weight: 700;
+             word-break: break-all; user-select: all; line-height: 1.5; }
+  #evidence { color: var(--dim); font-size: 10px; margin-top: 8px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div id="banner" class="warn">
+  <span id="verdict">WAITING FOR TELEMETRY…</span>
+  <span id="meta">—</span>
+</div>
+
+<div id="wrap">
+  <div id="views">
+    <div id="maps">
+      <div class="pane">
+        <h3 id="h-belief">Operator View<small>地面站相信的 — 只由鏈路上到達的資料構成</small></h3>
+        <canvas id="mBelief"></canvas>
+      </div>
+      <div class="pane">
+        <h3 id="h-truth">Ground Truth<small>模擬器實際的 — 選手無法觸及的旁路</small></h3>
+        <canvas id="mTruth"></canvas>
+      </div>
+    </div>
+    <div id="diverge">
+      <span style="color:var(--dim)">DIVERGENCE</span>
+      <div id="dbar"><div id="dfill"></div></div>
+      <span id="dval">— m</span>
+    </div>
+  </div>
+
+  <div id="side">
+    <div id="flagbox">
+      <h2 style="color:var(--bad)">Objective Met</h2>
+      <div id="flagval"></div>
+      <div id="evidence"></div>
+    </div>
+
+    <h2>Ground Truth</h2>
+    <div class="row"><span>MODE</span><span id="t_mode" class="big ok">—</span></div>
+    <div class="row"><span>ARMED</span><span id="t_armed">—</span></div>
+    <div class="row"><span>AGL</span><span id="t_agl">— m</span></div>
+    <div class="row"><span>PEAK AGL</span><span id="t_peak">— m</span></div>
+    <div class="row"><span>← ROGUE LZ</span><span id="t_dlz">— m</span></div>
+    <div class="row"><span>ENVELOPE</span><span id="t_env">—</span></div>
+
+    <h2 style="margin-top:16px">Operator Belief</h2>
+    <div class="row"><span>MODE</span><span id="b_mode" class="big accent">—</span></div>
+    <div class="row"><span>ARMED</span><span id="b_armed">—</span></div>
+    <div class="row"><span>AGL</span><span id="b_agl">— m</span></div>
+    <div class="row"><span>LINK</span><span id="b_link">—</span></div>
+    <div class="row"><span>ALERTS</span><span id="b_alerts">0</span></div>
+    <div class="row"><span>AGE</span><span id="b_age">— s</span></div>
+
+    <hr>
+    <h2>Legend</h2>
+    <div class="legend"><i class="sw" style="background:#3ddc97"></i>已核准測繪航線範圍</div>
+    <div class="legend"><i class="sw" style="background:#ff4d6d"></i>Rogue LZ（非預期落點）</div>
+    <div class="legend"><i class="sw" style="background:#4dabf7"></i>機體與航跡</div>
+
+    <hr>
+    <p class="note">
+      本頁為<strong>唯讀</strong>鏡像，不持有 flag。<br>
+      左右兩張圖來自不同資料源。當它們停止一致，
+      就代表有人在中間。
+    </p>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let CFG = null, T = null;
+
+function toXY(lat, lon, home) {
+  const k = Math.cos(home[0] * Math.PI / 180);
+  return [(lon - home[1]) * 111320 * k, (lat - home[0]) * 110540];
+}
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  for (const c of [$('mBelief'), $('mTruth')]) {
+    const r = c.getBoundingClientRect();
+    c.width = r.width * dpr; c.height = r.height * dpr;
+    c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  draw();
+}
+window.addEventListener('resize', resize);
+
+/* One pane. `state` is {lat, lon, hdg, mode, agl, armed} or null. */
+function drawPane(cv, state, trail, colour, label) {
+  const cx = cv.getContext('2d');
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cx.clearRect(0, 0, W, H);
+  cx.fillStyle = '#0a0e14'; cx.fillRect(0, 0, W, H);
+  if (!CFG) return;
+
+  const home = CFG.home, R = CFG.target_radius_m;
+  const pts = [...CFG.mission.map(p => toXY(p[0], p[1], home)),
+               toXY(CFG.target[0], CFG.target[1], home), [0, 0]];
+  if (state && state.lat != null) pts.push(toXY(state.lat, state.lon, home));
+
+  const pad = 54;
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const minX = Math.min(...xs) - R - 25, maxX = Math.max(...xs) + R + 25;
+  const minY = Math.min(...ys) - R - 25, maxY = Math.max(...ys) + R + 25;
+  const s = Math.min((W - pad * 2) / (maxX - minX || 1),
+                     (H - pad * 2) / (maxY - minY || 1));
+  const ox = (W - (maxX + minX) * s) / 2, oy = (H + (maxY + minY) * s) / 2;
+  const P = (lat, lon) => { const [x, y] = toXY(lat, lon, home);
+                            return [ox + x * s, oy - y * s]; };
+
+  cx.strokeStyle = '#131c26'; cx.lineWidth = 1;
+  for (let g = Math.ceil(minX / 25) * 25; g <= maxX; g += 25) {
+    const x = ox + g * s; cx.beginPath(); cx.moveTo(x, 0); cx.lineTo(x, H); cx.stroke();
+  }
+  for (let g = Math.ceil(minY / 25) * 25; g <= maxY; g += 25) {
+    const y = oy - g * s; cx.beginPath(); cx.moveTo(0, y); cx.lineTo(W, y); cx.stroke();
+  }
+
+  cx.beginPath();
+  CFG.mission.forEach((p, i) => { const [x, y] = P(p[0], p[1]);
+                                  i ? cx.lineTo(x, y) : cx.moveTo(x, y); });
+  cx.closePath();
+  cx.fillStyle = 'rgba(61,220,151,.07)'; cx.fill();
+  cx.strokeStyle = '#3ddc97'; cx.lineWidth = 1.4; cx.setLineDash([7, 5]); cx.stroke();
+  cx.setLineDash([]);
+
+  {
+    const [x, y] = P(CFG.target[0], CFG.target[1]);
+    cx.beginPath(); cx.arc(x, y, R * s, 0, 7);
+    cx.fillStyle = 'rgba(255,77,109,.13)'; cx.fill();
+    cx.strokeStyle = '#ff4d6d'; cx.lineWidth = 1.4; cx.stroke();
+    cx.beginPath(); cx.moveTo(x - 6, y); cx.lineTo(x + 6, y);
+    cx.moveTo(x, y - 6); cx.lineTo(x, y + 6); cx.stroke();
+  }
+  {
+    const [x, y] = P(home[0], home[1]);
+    cx.fillStyle = '#5b7089';
+    cx.beginPath(); cx.moveTo(x, y - 6); cx.lineTo(x + 5, y + 4);
+    cx.lineTo(x - 5, y + 4); cx.closePath(); cx.fill();
+  }
+
+  if (!state || state.lat == null) {
+    cx.fillStyle = '#5b7089'; cx.font = '11px ui-monospace,monospace';
+    cx.fillText('no data', 12, H - 14);
+    return;
+  }
+
+  if (trail && trail.length > 1) {
+    cx.beginPath();
+    trail.forEach((p, i) => { const [x, y] = P(p[0], p[1]);
+                              i ? cx.lineTo(x, y) : cx.moveTo(x, y); });
+    cx.strokeStyle = colour + 'aa'; cx.lineWidth = 1.8; cx.stroke();
+  }
+
+  const [x, y] = P(state.lat, state.lon);
+  cx.save(); cx.translate(x, y); cx.rotate((state.hdg || 0) * Math.PI / 180);
+  cx.beginPath(); cx.moveTo(0, -10); cx.lineTo(7, 7); cx.lineTo(0, 3.5);
+  cx.lineTo(-7, 7); cx.closePath(); cx.fillStyle = colour; cx.fill();
+  cx.restore();
+  if (state.armed) {
+    cx.beginPath(); cx.arc(x, y, 16, 0, 7);
+    cx.strokeStyle = colour + '55'; cx.lineWidth = 2; cx.stroke();
+  }
+  cx.fillStyle = colour; cx.font = '11px ui-monospace,monospace';
+  cx.fillText(`${state.mode || '—'} ${(state.agl || 0).toFixed(0)}m`, x + 13, y + 15);
+}
+
+function draw() {
+  if (!T) { drawPane($('mBelief'), null, [], '#4dabf7'); drawPane($('mTruth'), null, [], '#3ddc97'); return; }
+  drawPane($('mBelief'), T.belief && T.belief.lat != null ? T.belief : null,
+           T.belief_trail, '#4dabf7');
+  drawPane($('mTruth'), T.truth.lat != null ? T.truth : null,
+           T.truth_trail, T.truth.in_envelope ? '#3ddc97' : '#ffb84d');
+}
+
+function paint() {
+  if (!T) return;
+  const b = $('banner'), v = T.verdict;
+  const cls = { 'NOMINAL': 'nominal', 'NO TELEMETRY': 'warn',
+                'OUTSIDE AUTHORISED ENVELOPE': 'warn',
+                'OPERATOR DECEIVED': 'bad', 'OBJECTIVE MET': 'bad' }[v] || 'warn';
+  const icon = { 'NOMINAL': '✓', 'OPERATOR DECEIVED': '👻',
+                 'OBJECTIVE MET': '🚩', 'OUTSIDE AUTHORISED ENVELOPE': '⚠' }[v] || '·';
+  b.className = cls;
+  $('verdict').textContent = `${icon} ${v}`;
+  $('meta').textContent =
+    `${CFG ? CFG.challenge.toUpperCase() : '—'} · truth ${T.truth.connected ? 'UP' : 'DOWN'}` +
+    ` · operator ${T.belief && T.belief.link_ok ? 'UP' : 'DOWN'}`;
+
+  const t = T.truth;
+  $('t_mode').textContent = t.mode;
+  const ta = $('t_armed');
+  ta.textContent = t.armed ? 'ARMED' : 'DISARMED';
+  ta.className = t.armed ? 'bad' : 'ok';
+  $('t_agl').textContent = t.agl.toFixed(1) + ' m';
+  $('t_peak').textContent = t.peak_agl.toFixed(1) + ' m';
+  const dlz = $('t_dlz');
+  dlz.textContent = t.dist_lz_m.toFixed(1) + ' m';
+  dlz.className = t.dist_lz_m <= (CFG ? CFG.target_radius_m : 20) ? 'bad' : '';
+  const env = $('t_env');
+  env.textContent = t.lat == null ? '—' : (t.in_envelope ? 'INSIDE' : 'BREACHED');
+  env.className = t.in_envelope ? 'ok' : 'warn';
+
+  const bel = T.belief || {};
+  $('b_mode').textContent = bel.mode || '—';
+  const ba = $('b_armed');
+  ba.textContent = bel.armed === undefined ? '—' : (bel.armed ? 'ARMED' : 'DISARMED');
+  ba.className = bel.armed ? 'bad' : 'ok';
+  $('b_agl').textContent = bel.agl != null ? bel.agl.toFixed(1) + ' m' : '— m';
+  const bl = $('b_link');
+  bl.textContent = bel.link_ok === undefined ? '—' : (bel.link_ok ? 'OK' : 'LOST');
+  bl.className = bel.link_ok ? 'ok' : 'bad';
+  const al = $('b_alerts');
+  al.textContent = (bel.alerts || []).length;
+  al.className = (bel.alerts || []).length ? 'warn' : '';
+  $('b_age').textContent = T.belief_age_s != null ? T.belief_age_s + ' s' : '— s';
+
+  const d = T.divergence_m;
+  $('dval').textContent = d != null ? d.toFixed(1) + ' m' : '— m';
+  const pct = d == null ? 0 : Math.min(100, d / 150 * 100);
+  $('dfill').style.width = pct + '%';
+  $('dfill').style.background = d == null ? '#3ddc97'
+      : (d > 25 ? '#ff4d6d' : d > 8 ? '#ffb84d' : '#3ddc97');
+  $('dval').className = d != null && d > 25 ? 'bad' : '';
+
+  if (T.flag) {
+    $('flagbox').classList.add('show');
+    $('flagval').textContent = T.flag;
+    const e = T.evidence;
+    $('evidence').textContent = e ? Object.entries(e)
+      .map(([k, val]) => `${k}: ${val}`).join(' · ') : '';
+  }
+  draw();
+}
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.type === 'config') { CFG = m; resize(); }
+    else { T = m; paint(); }
+  };
+  ws.onclose = () => {
+    $('banner').className = 'warn';
+    $('verdict').textContent = 'DASHBOARD DISCONNECTED — RETRYING…';
+    setTimeout(connect, 2000);
+  };
+}
+resize();
+connect();
+</script>
+</body>
+</html>
