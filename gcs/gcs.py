@@ -58,8 +58,10 @@ class Belief:
     def __init__(self):
         self.lock = threading.Lock()
         self.d = {
-            "lat": None, "lon": None, "agl": 0.0,
+            "lat": None, "lon": None, "agl": 0.0, "hdg": 0.0,
+            "roll": 0.0, "pitch": 0.0, "groundspeed": 0.0,
             "mode": "—", "armed": False,
+            "sats": 0, "fix_type": 0, "battery_pct": -1,
             "link_ok": False, "alerts": [], "mission_seq": -1,
             "last_heartbeat": 0.0,
         }
@@ -120,10 +122,18 @@ def reader(m):
             BELIEF.update(
                 lat=msg.lat / 1e7, lon=msg.lon / 1e7,
                 agl=msg.relative_alt / 1000.0,
+                hdg=msg.hdg / 100.0 if msg.hdg != 65535 else 0.0,
             )
+        elif t == "ATTITUDE":
+            BELIEF.update(roll=msg.roll, pitch=msg.pitch)
+        elif t == "VFR_HUD":
+            BELIEF.update(groundspeed=msg.groundspeed)
+        elif t == "SYS_STATUS":
+            BELIEF.update(battery_pct=msg.battery_remaining)
         elif t == "GPS_RAW_INT":
             BELIEF.fix_type = msg.fix_type
             BELIEF.sats = msg.satellites_visible
+            BELIEF.update(sats=msg.satellites_visible, fix_type=msg.fix_type)
         elif t in ("MISSION_REQUEST", "MISSION_REQUEST_INT", "MISSION_ACK"):
             MISSION_Q.put(msg)
         elif t == "STATUSTEXT":

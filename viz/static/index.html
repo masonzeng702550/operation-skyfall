@@ -10,6 +10,9 @@
     --fg: #c8d6e5; --dim: #5b7089;
     --ok: #3ddc97; --warn: #ffb84d; --bad: #ff4d6d; --accent: #4dabf7;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    /* ground control chrome */
+    --gc-chrome: #2b2b2b; --gc-chrome2: #383838; --gc-text: #f0f0f0;
   }
   * { box-sizing: border-box; }
   body {
@@ -30,18 +33,72 @@
   #wrap { display: flex; height: calc(100vh - 41px); }
   #views { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   #maps { flex: 1; display: flex; min-height: 0; }
-  .pane { flex: 1; position: relative; min-width: 0; }
-  .pane + .pane { border-left: 1px solid var(--line); }
-  .pane h3 {
+  .pane { flex: 1; position: relative; min-width: 0; overflow: hidden; }
+  .pane + .pane { border-left: 2px solid var(--line); }
+  canvas { display: block; }
+
+  /* ---------- operator pane: ground control station chrome ---------- */
+  #paneOp { background: #1e1e1e; display: flex; flex-direction: column; }
+  #mBelief { flex: 1; width: 100%; }
+
+  .gc-bar {
+    flex: none; background: var(--gc-chrome); color: var(--gc-text);
+    font-family: var(--sans); display: flex; align-items: center;
+    padding: 0 10px; gap: 16px; height: 38px; font-size: 12px;
+    border-bottom: 1px solid #111;
+  }
+  .gc-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .gc-item .lbl { opacity: .55; font-size: 10px; text-transform: uppercase;
+                  letter-spacing: .06em; }
+  .gc-item .val { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .gc-sep { width: 1px; height: 20px; background: #4a4a4a; }
+  .gc-mode {
+    margin-left: auto; background: var(--gc-chrome2); border-radius: 3px;
+    padding: 4px 12px; font-weight: 700; letter-spacing: .04em;
+  }
+  .gc-armed { background: #7a1f2b; border-radius: 3px; padding: 4px 10px;
+              font-weight: 700; font-size: 11px; }
+  .gc-armed.safe { background: #1f5a3d; }
+
+  #opBody { position: relative; flex: 1; min-height: 0; }
+  #opBody canvas#mBelief { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .gc-values {
+    position: absolute; top: 10px; left: 10px; z-index: 3;
+    background: rgba(30,30,30,.82); border: 1px solid #4a4a4a; border-radius: 3px;
+    font-family: var(--sans); color: var(--gc-text); padding: 8px 10px; min-width: 132px;
+  }
+  .gc-values .r { display: flex; justify-content: space-between; gap: 14px;
+                  padding: 2px 0; font-size: 12px; }
+  .gc-values .r span:first-child { opacity: .55; font-size: 10px;
+                                   text-transform: uppercase; letter-spacing: .05em;
+                                   align-self: center; }
+  .gc-values .r span:last-child { font-weight: 600;
+                                  font-variant-numeric: tabular-nums; }
+
+  #adiWrap {
+    position: absolute; left: 10px; bottom: 10px; z-index: 3;
+    background: rgba(30,30,30,.82); border: 1px solid #4a4a4a; border-radius: 3px;
+    padding: 6px;
+  }
+  #adi { width: 108px; height: 108px; display: block; }
+
+  .gc-tag {
+    position: absolute; top: 10px; right: 10px; z-index: 3;
+    font-family: var(--sans); font-size: 10px; color: #9a9a9a;
+    background: rgba(30,30,30,.82); border: 1px solid #4a4a4a;
+    border-radius: 3px; padding: 4px 8px; letter-spacing: .04em;
+  }
+
+  /* ---------- truth pane: referee view ---------- */
+  #paneTruth h3 {
     position: absolute; top: 10px; left: 12px; margin: 0; z-index: 2;
     font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
-    font-weight: 600; pointer-events: none;
+    font-weight: 600; pointer-events: none; color: var(--ok);
   }
-  .pane h3 small { display: block; font-size: 9px; letter-spacing: .05em;
-                   text-transform: none; color: var(--dim); margin-top: 3px; }
-  #h-belief { color: var(--accent); }
-  #h-truth  { color: var(--ok); }
-  canvas { display: block; width: 100%; height: 100%; }
+  #paneTruth h3 small { display: block; font-size: 9px; letter-spacing: .05em;
+                        text-transform: none; color: var(--dim); margin-top: 3px; }
+  #mTruth { width: 100%; height: 100%; }
 
   #diverge {
     flex: none; padding: 9px 16px; border-top: 1px solid var(--line);
@@ -54,7 +111,7 @@
           text-align: right; }
 
   #side {
-    width: 254px; flex: none; border-left: 1px solid var(--line);
+    width: 244px; flex: none; border-left: 1px solid var(--line);
     background: var(--panel); overflow-y: auto; padding: 14px;
   }
   h2 { margin: 0 0 9px; font-size: 10px; letter-spacing: .18em;
@@ -63,13 +120,10 @@
          padding: 4px 0; border-bottom: 1px solid #16202b; }
   .row span:first-child { color: var(--dim); }
   .row span:last-child { font-variant-numeric: tabular-nums; }
-  .big { font-size: 17px; font-weight: 700; }
+  .big { font-size: 16px; font-weight: 700; }
   .ok { color: var(--ok); } .warn { color: var(--warn); }
   .bad { color: var(--bad); } .accent { color: var(--accent); }
   hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
-  .legend { display: flex; align-items: center; gap: 7px; padding: 3px 0;
-            color: var(--dim); font-size: 11px; }
-  .sw { width: 11px; height: 11px; flex: none; border-radius: 2px; }
   .note { color: var(--dim); font-size: 11px; line-height: 1.55; }
   #flagbox { display: none; margin-bottom: 14px; padding: 12px;
              border: 1px solid var(--bad); border-radius: 4px; background: #200c13; }
@@ -77,9 +131,69 @@
   #flagval { color: var(--bad); font-size: 13px; font-weight: 700;
              word-break: break-all; user-select: all; line-height: 1.5; }
   #evidence { color: var(--dim); font-size: 10px; margin-top: 8px; line-height: 1.6; }
+
+  /* ---------- flag burst ---------- */
+  #burst {
+    position: fixed; inset: 0; z-index: 50; display: none;
+    background: radial-gradient(circle at 50% 45%, rgba(60,0,20,.80), rgba(5,6,10,.95));
+    backdrop-filter: blur(3px);
+  }
+  #burst.show { display: block; }
+  #burstFx { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #burstCard {
+    position: absolute; left: 50%; top: 47%; transform: translate(-50%, -50%);
+    text-align: center; width: min(92vw, 860px); padding: 0 16px;
+  }
+  #burstKicker {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .34em;
+    text-transform: uppercase; color: var(--bad); margin-bottom: 18px;
+    opacity: 0; animation: fadeUp .5s .15s forwards;
+  }
+  #burstFlag {
+    font-family: var(--mono); font-size: clamp(17px, 3.1vw, 40px); font-weight: 700;
+    color: #fff; word-break: break-all; line-height: 1.35; user-select: all;
+    text-shadow: 0 0 26px rgba(255,77,109,.95), 0 0 62px rgba(255,77,109,.55);
+    opacity: 0; transform: scale(.72);
+    animation: pop .62s cubic-bezier(.16,1.5,.4,1) .1s forwards;
+  }
+  #burstMeta {
+    font-family: var(--mono); font-size: 11px; color: #9fb0c4; margin-top: 20px;
+    line-height: 1.75; opacity: 0; animation: fadeUp .5s .5s forwards;
+  }
+  #burstHint {
+    font-family: var(--mono); font-size: 11px; color: #6d7f93; margin-top: 22px;
+    opacity: 0; animation: fadeUp .5s .8s forwards;
+  }
+  #burstCopy {
+    margin-top: 16px; font-family: var(--mono); font-size: 12px; cursor: pointer;
+    background: transparent; color: var(--bad); border: 1px solid var(--bad);
+    border-radius: 3px; padding: 7px 18px; letter-spacing: .06em;
+    opacity: 0; animation: fadeUp .5s .65s forwards;
+  }
+  #burstCopy:hover { background: var(--bad); color: #14060a; }
+  @keyframes pop {
+    0%   { opacity: 0; transform: scale(.72); }
+    70%  { opacity: 1; transform: scale(1.04); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(9px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 </style>
 </head>
 <body>
+
+<div id="burst">
+  <canvas id="burstFx"></canvas>
+  <div id="burstCard">
+    <div id="burstKicker">Objective Met</div>
+    <div id="burstFlag"></div>
+    <div id="burstMeta"></div>
+    <button id="burstCopy">COPY FLAG</button>
+    <div id="burstHint">按 ESC 或點擊任意處關閉</div>
+  </div>
+</div>
 
 <div id="banner" class="warn">
   <span id="verdict">WAITING FOR TELEMETRY…</span>
@@ -89,14 +203,44 @@
 <div id="wrap">
   <div id="views">
     <div id="maps">
-      <div class="pane">
-        <h3 id="h-belief">Operator View<small>地面站相信的 — 只由鏈路上到達的資料構成</small></h3>
-        <canvas id="mBelief"></canvas>
+
+      <!-- what the operator sees -->
+      <div class="pane" id="paneOp">
+        <div class="gc-bar">
+          <div class="gc-item"><span class="lbl">GPS</span>
+            <span class="val" id="gcSats">—</span></div>
+          <div class="gc-sep"></div>
+          <div class="gc-item"><span class="lbl">Batt</span>
+            <span class="val" id="gcBatt">—</span></div>
+          <div class="gc-sep"></div>
+          <div class="gc-item"><span class="lbl">Link</span>
+            <span class="val" id="gcLink">—</span></div>
+          <div class="gc-sep"></div>
+          <div class="gc-item"><span class="lbl">Alerts</span>
+            <span class="val" id="gcAlerts">0</span></div>
+          <div class="gc-armed safe" id="gcArmed" style="margin-left:auto">DISARMED</div>
+          <div class="gc-mode" id="gcMode" style="margin-left:8px">—</div>
+        </div>
+
+        <div id="opBody">
+          <canvas id="mBelief"></canvas>
+          <div class="gc-values">
+            <div class="r"><span>Alt (Rel)</span><span id="gcAlt">—</span></div>
+            <div class="r"><span>Ground Spd</span><span id="gcSpd">—</span></div>
+            <div class="r"><span>Dist Home</span><span id="gcDist">—</span></div>
+            <div class="r"><span>Heading</span><span id="gcHdg">—</span></div>
+          </div>
+          <div id="adiWrap"><canvas id="adi"></canvas></div>
+          <div class="gc-tag">OPERATOR STATION — 地面站畫面</div>
+        </div>
       </div>
-      <div class="pane">
-        <h3 id="h-truth">Ground Truth<small>模擬器實際的 — 選手無法觸及的旁路</small></h3>
+
+      <!-- what is actually happening -->
+      <div class="pane" id="paneTruth">
+        <h3>Ground Truth<small>模擬器實際的 — 選手無法觸及的旁路</small></h3>
         <canvas id="mTruth"></canvas>
       </div>
+
     </div>
     <div id="diverge">
       <span style="color:var(--dim)">DIVERGENCE</span>
@@ -122,23 +266,16 @@
 
     <h2 style="margin-top:16px">Operator Belief</h2>
     <div class="row"><span>MODE</span><span id="b_mode" class="big accent">—</span></div>
-    <div class="row"><span>ARMED</span><span id="b_armed">—</span></div>
     <div class="row"><span>AGL</span><span id="b_agl">— m</span></div>
+    <div class="row"><span>HEADING</span><span id="b_hdg">—°</span></div>
     <div class="row"><span>LINK</span><span id="b_link">—</span></div>
-    <div class="row"><span>ALERTS</span><span id="b_alerts">0</span></div>
     <div class="row"><span>AGE</span><span id="b_age">— s</span></div>
 
     <hr>
-    <h2>Legend</h2>
-    <div class="legend"><i class="sw" style="background:#3ddc97"></i>已核准測繪航線範圍</div>
-    <div class="legend"><i class="sw" style="background:#ff4d6d"></i>Rogue LZ（非預期落點）</div>
-    <div class="legend"><i class="sw" style="background:#4dabf7"></i>機體與航跡</div>
-
-    <hr>
     <p class="note">
-      本頁為<strong>唯讀</strong>鏡像，不持有 flag。<br>
-      左右兩張圖來自不同資料源。當它們停止一致，
-      就代表有人在中間。
+      左邊是<strong>地面站畫面</strong>，只由鏈路上到達的資料構成。<br>
+      右邊是<strong>模擬器真值</strong>，走選手碰不到的旁路。<br><br>
+      本頁不持有 flag。當兩邊停止一致，就代表有人在中間。
     </p>
   </div>
 </div>
@@ -152,50 +289,210 @@ function toXY(lat, lon, home) {
   return [(lon - home[1]) * 111320 * k, (lat - home[0]) * 110540];
 }
 
-function resize() {
+function fitCanvas(c) {
   const dpr = window.devicePixelRatio || 1;
-  for (const c of [$('mBelief'), $('mTruth')]) {
-    const r = c.getBoundingClientRect();
-    c.width = r.width * dpr; c.height = r.height * dpr;
-    c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
+  const r = c.getBoundingClientRect();
+  c.width = Math.max(1, r.width * dpr);
+  c.height = Math.max(1, r.height * dpr);
+  c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function resize() {
+  [$('mBelief'), $('mTruth'), $('adi')].forEach(fitCanvas);
   draw();
 }
 window.addEventListener('resize', resize);
 
-/* One pane. `state` is {lat, lon, hdg, mode, agl, armed} or null. */
-function drawPane(cv, state, trail, colour, label) {
-  const cx = cv.getContext('2d');
+/* Shared projection helper for one pane. */
+function project(cv, state) {
+  const W = cv.clientWidth, H = cv.clientHeight, home = CFG.home, R = CFG.target_radius_m;
+  const pts = [...CFG.mission.map(p => toXY(p[0], p[1], home)),
+               toXY(CFG.target[0], CFG.target[1], home), [0, 0]];
+  if (state && state.lat != null) pts.push(toXY(state.lat, state.lon, home));
+  const pad = 60;
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const minX = Math.min(...xs) - R - 30, maxX = Math.max(...xs) + R + 30;
+  const minY = Math.min(...ys) - R - 30, maxY = Math.max(...ys) + R + 30;
+  const s = Math.min((W - pad * 2) / (maxX - minX || 1),
+                     (H - pad * 2) / (maxY - minY || 1));
+  const ox = (W - (maxX + minX) * s) / 2, oy = (H + (maxY + minY) * s) / 2;
+  return {
+    W, H, s,
+    P: (lat, lon) => { const [x, y] = toXY(lat, lon, home);
+                       return [ox + x * s, oy - y * s]; },
+    L: (x, y) => [ox + x * s, oy - y * s],
+    bounds: [minX, maxX, minY, maxY],
+  };
+}
+
+/* ---------- operator pane: aerial imagery + mission overlay ---------- */
+
+/* Deterministic pseudo-random so the "terrain" never shimmers between frames. */
+function rnd(n) { const x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); }
+
+function drawTerrain(cx, pr) {
+  const [minX, maxX, minY, maxY] = pr.bounds;
+  cx.fillStyle = '#2c3327'; cx.fillRect(0, 0, pr.W, pr.H);
+  // Field parcels on a 60 m grid, tinted like low-saturation aerial imagery.
+  const G = 60;
+  for (let gx = Math.floor(minX / G) * G; gx < maxX + G; gx += G) {
+    for (let gy = Math.floor(minY / G) * G; gy < maxY + G; gy += G) {
+      const seed = (gx / G) * 71 + (gy / G) * 37;
+      const t = rnd(seed);
+      const shade = ['#333c2c', '#3b4432', '#2f3729', '#414a35', '#39402f'][
+        Math.floor(rnd(seed + 5) * 5)];
+      const [x0, y0] = pr.L(gx, gy + G);
+      const [x1, y1] = pr.L(gx + G, gy);
+      cx.fillStyle = shade;
+      cx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      if (t > 0.72) {  // a bare/ploughed parcel
+        cx.fillStyle = 'rgba(90,74,52,.30)';
+        cx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      }
+      cx.strokeStyle = 'rgba(0,0,0,.22)'; cx.lineWidth = 1;
+      cx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    }
+  }
+  // A track running through the scene.
+  cx.beginPath();
+  const [rx0, ry0] = pr.L(minX, -40), [rx1, ry1] = pr.L(maxX, 20);
+  cx.moveTo(rx0, ry0); cx.lineTo(rx1, ry1);
+  cx.strokeStyle = 'rgba(190,180,160,.35)'; cx.lineWidth = 5; cx.stroke();
+}
+
+function drawOperator(state, trail) {
+  const cv = $('mBelief'), cx = cv.getContext('2d');
+  cx.clearRect(0, 0, cv.clientWidth, cv.clientHeight);
+  if (!CFG) { cx.fillStyle = '#1e1e1e'; cx.fillRect(0, 0, cv.clientWidth, cv.clientHeight); return; }
+  const pr = project(cv, state);
+  drawTerrain(cx, pr);
+
+  // Mission: a green track with numbered waypoint pins, the way a station draws it.
+  const wps = CFG.mission;
+  cx.beginPath();
+  wps.forEach((p, i) => { const [x, y] = pr.P(p[0], p[1]); i ? cx.lineTo(x, y) : cx.moveTo(x, y); });
+  cx.closePath();
+  cx.strokeStyle = '#7ed957'; cx.lineWidth = 2.5; cx.stroke();
+
+  wps.forEach((p, i) => {
+    const [x, y] = pr.P(p[0], p[1]);
+    cx.beginPath(); cx.arc(x, y, 11, 0, 7);
+    cx.fillStyle = '#7ed957'; cx.fill();
+    cx.strokeStyle = '#2b4a1c'; cx.lineWidth = 1.5; cx.stroke();
+    cx.fillStyle = '#16250f'; cx.font = 'bold 12px -apple-system,sans-serif';
+    cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    cx.fillText(String(i + 1), x, y + 0.5);
+  });
+  cx.textAlign = 'start'; cx.textBaseline = 'alphabetic';
+
+  // Home marker.
+  {
+    const [x, y] = pr.P(CFG.home[0], CFG.home[1]);
+    cx.beginPath(); cx.arc(x, y, 10, 0, 7);
+    cx.fillStyle = '#ffffff'; cx.fill();
+    cx.fillStyle = '#222'; cx.font = 'bold 12px -apple-system,sans-serif';
+    cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    cx.fillText('H', x, y + 0.5);
+    cx.textAlign = 'start'; cx.textBaseline = 'alphabetic';
+  }
+
+  if (!state || state.lat == null) {
+    cx.fillStyle = 'rgba(0,0,0,.5)';
+    cx.fillRect(0, pr.H / 2 - 18, pr.W, 36);
+    cx.fillStyle = '#ddd'; cx.font = '13px -apple-system,sans-serif';
+    cx.textAlign = 'center';
+    cx.fillText('Waiting for Vehicle Connection', pr.W / 2, pr.H / 2 + 5);
+    cx.textAlign = 'start';
+    return;
+  }
+
+  if (trail && trail.length > 1) {
+    cx.beginPath();
+    trail.forEach((p, i) => { const [x, y] = pr.P(p[0], p[1]); i ? cx.lineTo(x, y) : cx.moveTo(x, y); });
+    cx.strokeStyle = 'rgba(255,255,255,.55)'; cx.lineWidth = 2; cx.stroke();
+  }
+
+  // Vehicle: the yellow arrow a station puts on the map.
+  const [x, y] = pr.P(state.lat, state.lon);
+  cx.save(); cx.translate(x, y); cx.rotate((state.hdg || 0) * Math.PI / 180);
+  cx.beginPath();
+  cx.moveTo(0, -15); cx.lineTo(10, 11); cx.lineTo(0, 6); cx.lineTo(-10, 11);
+  cx.closePath();
+  cx.fillStyle = '#ffcf33'; cx.fill();
+  cx.strokeStyle = '#4a3a00'; cx.lineWidth = 1.5; cx.stroke();
+  cx.restore();
+}
+
+/* Attitude indicator. */
+function drawADI(state) {
+  const c = $('adi'), g = c.getContext('2d');
+  const W = c.clientWidth, H = c.clientHeight, cxp = W / 2, cyp = H / 2, R = W / 2 - 4;
+  g.clearRect(0, 0, W, H);
+  g.save();
+  g.beginPath(); g.arc(cxp, cyp, R, 0, 7); g.clip();
+
+  const roll = state ? (state.roll || 0) : 0;
+  const pitch = state ? (state.pitch || 0) : 0;
+  const pxPerRad = R / (Math.PI / 3);
+
+  g.save();
+  g.translate(cxp, cyp); g.rotate(-roll); g.translate(0, pitch * pxPerRad);
+  g.fillStyle = '#2f7fbf'; g.fillRect(-R * 3, -R * 3, R * 6, R * 3);
+  g.fillStyle = '#8a6234'; g.fillRect(-R * 3, 0, R * 6, R * 3);
+  g.strokeStyle = '#fff'; g.lineWidth = 1.6;
+  g.beginPath(); g.moveTo(-R * 3, 0); g.lineTo(R * 3, 0); g.stroke();
+  g.lineWidth = 1;
+  for (let d = -30; d <= 30; d += 10) {
+    if (!d) continue;
+    const yy = -(d * Math.PI / 180) * pxPerRad;
+    const w = d % 20 === 0 ? R * 0.5 : R * 0.28;
+    g.beginPath(); g.moveTo(-w, yy); g.lineTo(w, yy); g.stroke();
+  }
+  g.restore();
+
+  // Fixed aircraft reference.
+  g.strokeStyle = '#ffcf33'; g.lineWidth = 2.4;
+  g.beginPath();
+  g.moveTo(cxp - R * 0.5, cyp); g.lineTo(cxp - R * 0.16, cyp);
+  g.moveTo(cxp + R * 0.16, cyp); g.lineTo(cxp + R * 0.5, cyp);
+  g.moveTo(cxp, cyp - 2.5); g.lineTo(cxp, cyp + 2.5);
+  g.stroke();
+  g.restore();
+
+  g.strokeStyle = '#6a6a6a'; g.lineWidth = 2;
+  g.beginPath(); g.arc(cxp, cyp, R, 0, 7); g.stroke();
+
+  // Compass needle.
+  const hdg = state ? (state.hdg || 0) : 0;
+  g.save(); g.translate(cxp, cyp); g.rotate(hdg * Math.PI / 180);
+  g.beginPath(); g.moveTo(0, -R + 6); g.lineTo(4.5, -R + 16); g.lineTo(-4.5, -R + 16);
+  g.closePath(); g.fillStyle = '#ff5555'; g.fill();
+  g.restore();
+  g.fillStyle = '#ddd'; g.font = 'bold 9px -apple-system,sans-serif';
+  g.textAlign = 'center';
+  g.fillText('N', cxp, cyp - R + 12);
+  g.textAlign = 'start';
+}
+
+/* ---------- truth pane: referee wireframe ---------- */
+function drawTruth(state, trail) {
+  const cv = $('mTruth'), cx = cv.getContext('2d');
   const W = cv.clientWidth, H = cv.clientHeight;
   cx.clearRect(0, 0, W, H);
   cx.fillStyle = '#0a0e14'; cx.fillRect(0, 0, W, H);
   if (!CFG) return;
-
-  const home = CFG.home, R = CFG.target_radius_m;
-  const pts = [...CFG.mission.map(p => toXY(p[0], p[1], home)),
-               toXY(CFG.target[0], CFG.target[1], home), [0, 0]];
-  if (state && state.lat != null) pts.push(toXY(state.lat, state.lon, home));
-
-  const pad = 54;
-  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-  const minX = Math.min(...xs) - R - 25, maxX = Math.max(...xs) + R + 25;
-  const minY = Math.min(...ys) - R - 25, maxY = Math.max(...ys) + R + 25;
-  const s = Math.min((W - pad * 2) / (maxX - minX || 1),
-                     (H - pad * 2) / (maxY - minY || 1));
-  const ox = (W - (maxX + minX) * s) / 2, oy = (H + (maxY + minY) * s) / 2;
-  const P = (lat, lon) => { const [x, y] = toXY(lat, lon, home);
-                            return [ox + x * s, oy - y * s]; };
+  const pr = project(cv, state);
+  const [minX, maxX, minY, maxY] = pr.bounds;
 
   cx.strokeStyle = '#131c26'; cx.lineWidth = 1;
   for (let g = Math.ceil(minX / 25) * 25; g <= maxX; g += 25) {
-    const x = ox + g * s; cx.beginPath(); cx.moveTo(x, 0); cx.lineTo(x, H); cx.stroke();
+    const [x] = pr.L(g, 0); cx.beginPath(); cx.moveTo(x, 0); cx.lineTo(x, H); cx.stroke();
   }
   for (let g = Math.ceil(minY / 25) * 25; g <= maxY; g += 25) {
-    const y = oy - g * s; cx.beginPath(); cx.moveTo(0, y); cx.lineTo(W, y); cx.stroke();
+    const [, y] = pr.L(0, g); cx.beginPath(); cx.moveTo(0, y); cx.lineTo(W, y); cx.stroke();
   }
 
   cx.beginPath();
-  CFG.mission.forEach((p, i) => { const [x, y] = P(p[0], p[1]);
+  CFG.mission.forEach((p, i) => { const [x, y] = pr.P(p[0], p[1]);
                                   i ? cx.lineTo(x, y) : cx.moveTo(x, y); });
   cx.closePath();
   cx.fillStyle = 'rgba(61,220,151,.07)'; cx.fill();
@@ -203,15 +500,18 @@ function drawPane(cv, state, trail, colour, label) {
   cx.setLineDash([]);
 
   {
-    const [x, y] = P(CFG.target[0], CFG.target[1]);
-    cx.beginPath(); cx.arc(x, y, R * s, 0, 7);
+    const [x, y] = pr.P(CFG.target[0], CFG.target[1]);
+    const R = CFG.target_radius_m * pr.s;
+    cx.beginPath(); cx.arc(x, y, R, 0, 7);
     cx.fillStyle = 'rgba(255,77,109,.13)'; cx.fill();
     cx.strokeStyle = '#ff4d6d'; cx.lineWidth = 1.4; cx.stroke();
     cx.beginPath(); cx.moveTo(x - 6, y); cx.lineTo(x + 6, y);
     cx.moveTo(x, y - 6); cx.lineTo(x, y + 6); cx.stroke();
+    cx.fillStyle = '#ff4d6d'; cx.font = '11px ui-monospace,monospace';
+    cx.fillText('ROGUE LZ', x + R + 6, y - 6);
   }
   {
-    const [x, y] = P(home[0], home[1]);
+    const [x, y] = pr.P(CFG.home[0], CFG.home[1]);
     cx.fillStyle = '#5b7089';
     cx.beginPath(); cx.moveTo(x, y - 6); cx.lineTo(x + 5, y + 4);
     cx.lineTo(x - 5, y + 4); cx.closePath(); cx.fill();
@@ -223,14 +523,14 @@ function drawPane(cv, state, trail, colour, label) {
     return;
   }
 
+  const colour = state.in_envelope ? '#3ddc97' : '#ffb84d';
   if (trail && trail.length > 1) {
     cx.beginPath();
-    trail.forEach((p, i) => { const [x, y] = P(p[0], p[1]);
+    trail.forEach((p, i) => { const [x, y] = pr.P(p[0], p[1]);
                               i ? cx.lineTo(x, y) : cx.moveTo(x, y); });
     cx.strokeStyle = colour + 'aa'; cx.lineWidth = 1.8; cx.stroke();
   }
-
-  const [x, y] = P(state.lat, state.lon);
+  const [x, y] = pr.P(state.lat, state.lon);
   cx.save(); cx.translate(x, y); cx.rotate((state.hdg || 0) * Math.PI / 180);
   cx.beginPath(); cx.moveTo(0, -10); cx.lineTo(7, 7); cx.lineTo(0, 3.5);
   cx.lineTo(-7, 7); cx.closePath(); cx.fillStyle = colour; cx.fill();
@@ -244,11 +544,18 @@ function drawPane(cv, state, trail, colour, label) {
 }
 
 function draw() {
-  if (!T) { drawPane($('mBelief'), null, [], '#4dabf7'); drawPane($('mTruth'), null, [], '#3ddc97'); return; }
-  drawPane($('mBelief'), T.belief && T.belief.lat != null ? T.belief : null,
-           T.belief_trail, '#4dabf7');
-  drawPane($('mTruth'), T.truth.lat != null ? T.truth : null,
-           T.truth_trail, T.truth.in_envelope ? '#3ddc97' : '#ffb84d');
+  if (!T) { drawOperator(null, []); drawTruth(null, []); drawADI(null); return; }
+  const bel = (T.belief && T.belief.lat != null) ? T.belief : null;
+  drawOperator(bel, T.belief_trail);
+  drawADI(bel);
+  drawTruth(T.truth.lat != null ? T.truth : null, T.truth_trail);
+}
+
+function haversine(a, b, c, d) {
+  const R = 6371000, p1 = a * Math.PI / 180, p2 = c * Math.PI / 180;
+  const dp = (c - a) * Math.PI / 180, dl = (d - b) * Math.PI / 180;
+  const x = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
 }
 
 function paint() {
@@ -265,6 +572,27 @@ function paint() {
     `${CFG ? CFG.challenge.toUpperCase() : '—'} · truth ${T.truth.connected ? 'UP' : 'DOWN'}` +
     ` · operator ${T.belief && T.belief.link_ok ? 'UP' : 'DOWN'}`;
 
+  const bel = T.belief || {};
+
+  // operator station chrome
+  $('gcSats').textContent = bel.sats ? `${bel.sats}` : '—';
+  $('gcBatt').textContent = (bel.battery_pct != null && bel.battery_pct >= 0)
+    ? `${bel.battery_pct}%` : '—';
+  $('gcLink').textContent = bel.link_ok === undefined ? '—' : (bel.link_ok ? 'OK' : 'LOST');
+  $('gcLink').style.color = bel.link_ok ? '#7ed957' : '#ff6b6b';
+  $('gcAlerts').textContent = (bel.alerts || []).length;
+  const ga = $('gcArmed');
+  ga.textContent = bel.armed ? 'ARMED' : 'DISARMED';
+  ga.className = 'gc-armed' + (bel.armed ? '' : ' safe');
+  $('gcMode').textContent = bel.mode || '—';
+  $('gcAlt').textContent = bel.agl != null ? `${bel.agl.toFixed(1)} m` : '—';
+  $('gcSpd').textContent = bel.groundspeed != null
+    ? `${bel.groundspeed.toFixed(1)} m/s` : '—';
+  $('gcDist').textContent = (bel.lat != null && CFG)
+    ? `${haversine(bel.lat, bel.lon, CFG.home[0], CFG.home[1]).toFixed(0)} m` : '—';
+  $('gcHdg').textContent = bel.hdg != null ? `${bel.hdg.toFixed(0)}°` : '—';
+
+  // referee panel
   const t = T.truth;
   $('t_mode').textContent = t.mode;
   const ta = $('t_armed');
@@ -279,24 +607,17 @@ function paint() {
   env.textContent = t.lat == null ? '—' : (t.in_envelope ? 'INSIDE' : 'BREACHED');
   env.className = t.in_envelope ? 'ok' : 'warn';
 
-  const bel = T.belief || {};
   $('b_mode').textContent = bel.mode || '—';
-  const ba = $('b_armed');
-  ba.textContent = bel.armed === undefined ? '—' : (bel.armed ? 'ARMED' : 'DISARMED');
-  ba.className = bel.armed ? 'bad' : 'ok';
   $('b_agl').textContent = bel.agl != null ? bel.agl.toFixed(1) + ' m' : '— m';
+  $('b_hdg').textContent = bel.hdg != null ? bel.hdg.toFixed(0) + '°' : '—°';
   const bl = $('b_link');
   bl.textContent = bel.link_ok === undefined ? '—' : (bel.link_ok ? 'OK' : 'LOST');
   bl.className = bel.link_ok ? 'ok' : 'bad';
-  const al = $('b_alerts');
-  al.textContent = (bel.alerts || []).length;
-  al.className = (bel.alerts || []).length ? 'warn' : '';
   $('b_age').textContent = T.belief_age_s != null ? T.belief_age_s + ' s' : '— s';
 
   const d = T.divergence_m;
   $('dval').textContent = d != null ? d.toFixed(1) + ' m' : '— m';
-  const pct = d == null ? 0 : Math.min(100, d / 150 * 100);
-  $('dfill').style.width = pct + '%';
+  $('dfill').style.width = (d == null ? 0 : Math.min(100, d / 150 * 100)) + '%';
   $('dfill').style.background = d == null ? '#3ddc97'
       : (d > 25 ? '#ff4d6d' : d > 8 ? '#ffb84d' : '#3ddc97');
   $('dval').className = d != null && d > 25 ? 'bad' : '';
@@ -307,9 +628,91 @@ function paint() {
     const e = T.evidence;
     $('evidence').textContent = e ? Object.entries(e)
       .map(([k, val]) => `${k}: ${val}`).join(' · ') : '';
+    fireBurst(T.flag, e);
   }
   draw();
 }
+
+/* ---------- flag burst ---------- */
+let burstFired = false, burstParticles = [], burstRAF = null;
+
+function fireBurst(flag, evidence) {
+  if (burstFired) return;
+  burstFired = true;
+
+  $('burstFlag').textContent = flag;
+  $('burstMeta').textContent = evidence
+    ? Object.entries(evidence).map(([k, v]) => `${k} = ${v}`).join('   ·   ')
+    : '';
+  $('burst').classList.add('show');
+
+  const cv = $('burstFx');
+  fitCanvas(cv);
+  const W = cv.clientWidth, H = cv.clientHeight;
+  const cx0 = W / 2, cy0 = H * 0.47;
+  const palette = ['#ff4d6d', '#ffb84d', '#3ddc97', '#4dabf7', '#ffffff'];
+
+  burstParticles = [];
+  for (let i = 0; i < 260; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 3 + Math.random() * 13;
+    burstParticles.push({
+      x: cx0, y: cy0,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 3,
+      r: 1.8 + Math.random() * 3.4,
+      c: palette[(Math.random() * palette.length) | 0],
+      life: 1, decay: 0.006 + Math.random() * 0.012,
+      spin: (Math.random() - 0.5) * 0.4, rot: Math.random() * 6.3,
+    });
+  }
+
+  const g = cv.getContext('2d');
+  function step() {
+    g.clearRect(0, 0, W, H);
+    let alive = 0;
+    for (const p of burstParticles) {
+      if (p.life <= 0) continue;
+      alive++;
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.16;            // gravity
+      p.vx *= 0.992; p.vy *= 0.992;
+      p.rot += p.spin;
+      p.life -= p.decay;
+      g.save();
+      g.globalAlpha = Math.max(0, p.life);
+      g.translate(p.x, p.y); g.rotate(p.rot);
+      g.fillStyle = p.c;
+      g.fillRect(-p.r, -p.r * 0.55, p.r * 2, p.r * 1.1);
+      g.restore();
+    }
+    if (alive) burstRAF = requestAnimationFrame(step);
+  }
+  step();
+}
+
+function closeBurst() {
+  $('burst').classList.remove('show');
+  if (burstRAF) cancelAnimationFrame(burstRAF);
+}
+
+$('burst').addEventListener('click', ev => {
+  if (ev.target.id !== 'burstCopy') closeBurst();
+});
+document.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape') closeBurst();
+});
+$('burstCopy').addEventListener('click', async ev => {
+  ev.stopPropagation();
+  const btn = ev.currentTarget;
+  try {
+    await navigator.clipboard.writeText($('burstFlag').textContent);
+    btn.textContent = 'COPIED';
+  } catch {
+    // Clipboard needs a secure context; the flag is selectable either way.
+    btn.textContent = 'SELECT THE FLAG ABOVE';
+  }
+  setTimeout(() => { btn.textContent = 'COPY FLAG'; }, 2000);
+});
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';

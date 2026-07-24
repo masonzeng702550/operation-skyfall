@@ -63,7 +63,14 @@ services:
     environment:
       CHALLENGE: "${CHALLENGE:-q3}"
       # The flag exists ONLY here. A shell in sitl, mitm, gcs or viz gains nothing.
-      FLAG: "${FLAG:-THJCC{set_a_real_flag_before_you_deploy_this}}"
+      #
+      # static:  serves FLAG verbatim to everyone.
+      # dynamic: derives a per-team flag from FLAG_SECRET + TEAM_ID, so a
+      #          leaked flag names the team that leaked it.
+      FLAG_MODE: "${FLAG_MODE:-static}"
+      FLAG: "${FLAG:-}"
+      FLAG_SECRET: "${FLAG_SECRET:-}"
+      TEAM_ID: "${TEAM_ID:-solo}"
       HOME_LAT: "-35.363262"
       HOME_LON: "149.165237"
       TARGET_LAT: "-35.363262"

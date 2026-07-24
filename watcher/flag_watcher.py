@@ -9,6 +9,8 @@ between the two.
 The flag exists in this process and nowhere else. A shell in any container the
 player can reach — the relay, the dashboard, the simulator — yields nothing.
 """
+import hashlib
+import hmac
 import json
 import math
 import os
@@ -21,7 +23,42 @@ from aiohttp import web
 from pymavlink import mavutil
 
 CHALLENGE = os.environ.get("CHALLENGE", "q0").lower()
-FLAG = os.environ.get("FLAG", "THJCC{placeholder_set_FLAG_env}")
+
+# Two ways to issue a flag.
+#
+#   static   every instance serves the same string. Fine for practice, a
+#            local range, or a writeup — and useless the moment one team
+#            pastes it into a group chat.
+#   dynamic  the string is derived per team from a secret the players never
+#            see, so a leaked flag identifies who leaked it and submitting
+#            someone else's does not score.
+FLAG_MODE = os.environ.get("FLAG_MODE", "static").lower()
+FLAG_SECRET = os.environ.get("FLAG_SECRET", "")
+TEAM_ID = os.environ.get("TEAM_ID", "solo")
+
+# Leet bodies, one per challenge. The dynamic mode appends a per-team token.
+FLAG_BODIES = {
+    "q0": "n0_h4ndsh4k3_r3qu1r3d_m4vl1nk_1s_w1d3_0p3n",
+    "q2": "0n3_p01s0n3d_w4yp01nt_4nd_th3_sky_g03s_qu13t",
+    "q3": "gh0st_1n_th3_m4ch1n3_th3y_n3v3r_s4w_1t_l34v3",
+}
+
+
+def issue_flag():
+    if FLAG_MODE == "dynamic":
+        if not FLAG_SECRET:
+            raise SystemExit("[watcher] FLAG_MODE=dynamic requires FLAG_SECRET")
+        body = FLAG_BODIES.get(CHALLENGE, CHALLENGE)
+        token = hmac.new(
+            FLAG_SECRET.encode(), f"{CHALLENGE}:{TEAM_ID}".encode(), hashlib.sha256
+        ).hexdigest()[:12]
+        return f"THJCC{{{body}_{token}}}"
+    env = os.environ.get("FLAG")
+    if env:
+        return env
+    return f"THJCC{{{FLAG_BODIES.get(CHALLENGE, 'unset_fl4g')}}}"
+FLAG = issue_flag()
+
 ENDPOINT = os.environ.get("WATCH_ENDPOINT", "udpin:0.0.0.0:14551")
 HTTP_PORT = int(os.environ.get("HTTP_PORT", "9000"))
 
@@ -309,6 +346,8 @@ async def status_handler(request):
 
 def main():
     log(f"challenge = {CHALLENGE}")
+    log(f"flag mode = {FLAG_MODE}"
+        + (f" (team {TEAM_ID})" if FLAG_MODE == "dynamic" else ""))
     log(f"rogue LZ = ({TGT_LAT}, {TGT_LON}) r={TGT_RADIUS_M}m")
 
     threading.Thread(target=truth_thread, daemon=True).start()

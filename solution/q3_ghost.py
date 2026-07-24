@@ -71,6 +71,26 @@ def fake_position(t):
     return lat, lon
 
 
+def fake_heading(t):
+    """Bearing along the leg we are pretending to fly.
+
+    The station draws a compass from this. Forging position but leaving the
+    real heading in place points the needle at the rogue LZ while the map
+    shows a survey circuit — the one inconsistency an operator would catch.
+    """
+    frac = (t % LAP_SECONDS) / LAP_SECONDS
+    leg = frac * len(BOX)
+    i = int(leg) % len(BOX)
+    j = (i + 1) % len(BOX)
+    lat1, lon1 = math.radians(BOX[i][0]), math.radians(BOX[i][1])
+    lat2, lon2 = math.radians(BOX[j][0]), math.radians(BOX[j][1])
+    dlon = lon2 - lon1
+    y = math.sin(dlon) * math.cos(lat2)
+    x = (math.cos(lat1) * math.sin(lat2)
+         - math.sin(lat1) * math.cos(lat2) * math.cos(dlon))
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+
 class Ghost:
     def __init__(self, tap, lat, lon, alt):
         self.tap = tap
@@ -168,11 +188,13 @@ class Ghost:
             t = m.get_type()
             if t == "GLOBAL_POSITION_INT":
                 self.truth = (m.lat / 1e7, m.lon / 1e7, m.relative_alt / 1000.0)
-                lat, lon = fake_position(time.time() - self.t0)
+                elapsed = time.time() - self.t0
+                lat, lon = fake_position(elapsed)
                 m.lat = int(lat * 1e7)
                 m.lon = int(lon * 1e7)
                 m.relative_alt = int(self.alt * 1000)
                 m.alt = int((584.0 + self.alt) * 1000)
+                m.hdg = int(fake_heading(elapsed) * 100)
                 touched = True
             elif t == "HEARTBEAT" and m.type != mavlink.MAV_TYPE_GCS:
                 if m.custom_mode != COPTER_AUTO:
