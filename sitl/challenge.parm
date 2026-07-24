@@ -1,12 +1,27 @@
-# Challenge tuning for "No Handshake Required".
+# Range tuning.
 # Arming checks are relaxed so competitors fight the protocol, not the EKF.
 ARMING_CHECK    0
 FENCE_ENABLE    0
 SIM_SPEEDUP     1
-# Keep the vehicle chatty so the watcher always has a position fix to score.
+
+# Keep the vehicle chatty so the scorer always has a position fix to work with.
 SR0_POSITION    5
 SR0_EXTRA1      5
 SR1_POSITION    5
 SR1_EXTRA1      5
 SR2_POSITION    5
 SR2_EXTRA1      5
+
+# The simulated battery drains in a few hours of flight, and a range left
+# running long enough would hit the failsafe, land itself and stop being a
+# target. A ground station reading 0% is also a distraction the challenge
+# does not need. Give it a capacity it will not exhaust and take the
+# failsafes out of the loop entirely.
+SIM_BATT_CAP_AH 1000
+BATT_CAPACITY   1000000
+BATT_LOW_VOLT   0
+BATT_CRT_VOLT   0
+BATT_LOW_MAH    0
+BATT_CRT_MAH    0
+BATT_FS_LOW_ACT 0
+BATT_FS_CRT_ACT 0

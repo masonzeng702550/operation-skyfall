@@ -32,6 +32,7 @@ BELIEF_SINKS = [s for s in os.environ.get(
 ).split(",") if s]
 
 REUPLOAD_PERIOD_S = float(os.environ.get("REUPLOAD_PERIOD_S", "60"))
+SUPERVISE_PERIOD_S = float(os.environ.get("SUPERVISE_PERIOD_S", "5"))
 CRUISE_ALT = float(os.environ.get("CRUISE_ALT", "30"))
 LINK_TIMEOUT_S = float(os.environ.get("LINK_TIMEOUT_S", "3"))
 
@@ -46,6 +47,9 @@ COPTER_MODES = {
 }
 
 MISSION_Q = queue.Queue()
+# Serialises the two things that drive the aircraft — the routine re-upload
+# and the supervisor's recovery — so they cannot interleave on the link.
+CONTROL_LOCK = threading.Lock()
 
 
 def log(msg):
@@ -251,6 +255,57 @@ def arm(m, timeout=60):
     return False
 
 
+def launch(m, items):
+    """Get the aircraft into the air and onto the mission."""
+    if not set_mode(m, COPTER_GUIDED, "GUIDED"):
+        return False
+    if not arm(m):
+        return False
+    log(f"takeoff to {CRUISE_ALT}m")
+    send_cmd(m, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, CRUISE_ALT)
+    time.sleep(15)
+    set_mode(m, COPTER_AUTO, "AUTO")
+    send_cmd(m, mavutil.mavlink.MAV_CMD_MISSION_START)
+    log("mission running")
+    return True
+
+
+def supervisor(m, items):
+    """The operator does not give up.
+
+    A station that sets AUTO once at startup and never looks again is a
+    station that hands the aircraft over permanently to whoever takes it
+    first. This one keeps checking and keeps trying to take it back, which
+    is both what a real operator does and what makes the range usable after
+    someone has already had a go at it.
+
+    Note what it checks: the mode it BELIEVES the aircraft is in. An attacker
+    who rewrites the heartbeat is invisible here and will not be fought. One
+    who steers the aircraft but leaves the mode reading GUIDED gets a fight
+    every few seconds. Half a deception is worse than none.
+    """
+    while True:
+        time.sleep(SUPERVISE_PERIOD_S)
+        b = BELIEF.snapshot()
+        if not b["link_ok"]:
+            continue  # nothing to say while we cannot reach the aircraft
+        with CONTROL_LOCK:
+            try:
+                if not b["armed"]:
+                    log("aircraft is on the ground — relaunching")
+                    launch(m, items)
+                elif BELIEF.custom_mode != COPTER_AUTO:
+                    log(f"mode reads {b['mode']}, not AUTO — taking it back")
+                    m.mav.set_mode_send(
+                        m.target_system,
+                        mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                        COPTER_AUTO,
+                    )
+                    send_cmd(m, mavutil.mavlink.MAV_CMD_MISSION_START)
+            except Exception as exc:
+                log(f"supervisor: {exc}")
+
+
 def main():
     threading.Thread(target=publish_belief, daemon=True).start()
 
@@ -273,30 +328,21 @@ def main():
     log(f"loaded {len(items)} mission items from {MISSION_FILE}")
     upload_mission(m, items)
 
-    if not set_mode(m, COPTER_GUIDED, "GUIDED"):
-        log("could not enter GUIDED")
-        return 1
-    if not arm(m):
-        log("could not arm")
+    if not launch(m, items):
+        log("could not get airborne")
         return 1
 
-    log(f"takeoff to {CRUISE_ALT}m")
-    send_cmd(m, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, CRUISE_ALT)
-    time.sleep(15)
-
-    if not set_mode(m, COPTER_AUTO, "AUTO"):
-        log("could not enter AUTO")
-    send_cmd(m, mavutil.mavlink.MAV_CMD_MISSION_START)
-    log("mission running")
+    threading.Thread(target=supervisor, args=(m, items), daemon=True).start()
 
     # Routine re-upload. Nothing about it is suspicious, and that is the problem.
     while True:
         time.sleep(REUPLOAD_PERIOD_S)
         log("re-uploading mission (routine)")
-        try:
-            upload_mission(m, items)
-        except Exception as exc:
-            log(f"re-upload failed: {exc}")
+        with CONTROL_LOCK:
+            try:
+                upload_mission(m, items)
+            except Exception as exc:
+                log(f"re-upload failed: {exc}")
 
 
 if __name__ == "__main__":
