@@ -145,6 +145,19 @@ async def handle_player(reader, writer):
             pass
 
 
+async def announce_until_answered(packet):
+    """Keep knocking until the aircraft answers.
+
+    The simulator's udpin endpoint only learns a return address from traffic it
+    receives, and it is not listening yet when this relay starts — a single
+    announcement at boot is simply lost, and the downlink never opens.
+    """
+    while LINK.stats["downlink"] == 0:
+        LINK.to_uav(packet)
+        await asyncio.sleep(2)
+    log("aircraft answered — downlink open")
+
+
 async def report_stats():
     while True:
         await asyncio.sleep(30)
@@ -174,7 +187,7 @@ async def main():
         mavlink.MAV_TYPE_GCS, mavlink.MAV_AUTOPILOT_INVALID, 0, 0,
         mavlink.MAV_STATE_ACTIVE,
     )
-    LINK.to_uav(hb.pack(packer))
+    asyncio.create_task(announce_until_answered(hb.pack(packer)))
 
     server = await asyncio.start_server(handle_player, "0.0.0.0", TAP_PORT)
     log(f"tap open on tcp/{TAP_PORT} — attach here to take the link")
