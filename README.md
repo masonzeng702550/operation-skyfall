@@ -147,6 +147,10 @@ for direction, data in tap.frames():
 python3 solution/q2_middleman.py --host <host> --port 14580
 ```
 
+> **時機**：地面站在起飛**前**也會上傳一次任務。太早接上並下毒會讓飛控死在地面，
+> 飛機永遠不會起飛，判分條件（空中失聯）也就無法成立，整個 stack 需要重置。
+> 先看戰情台確認飛機已在 `AUTO` 巡航，再接上 tap 等下一次重傳。
+
 ### `q3` — Ghost in the Machine（偽造）
 
 同時做兩件方向相反的事。
@@ -221,6 +225,21 @@ done
 `q2` 依賴未修補的 ArduPilot 樹。**映像必須 pin 到固定 tag，絕不可用 `latest`。**
 
 ---
+
+## 已驗證行為
+
+在 arm64 主機上以 `Copter-4.6.3` 實測：
+
+| 項目 | 結果 |
+|---|---|
+| 中繼透明轉發 | 2129 frames tapped / 2129 injected，零丟包 |
+| `q2` — 竄改在途任務 | `param1 0.0 → 1e10` 注入後，飛控在 **17.7 m 空中**行程終止；`arducopter` 從行程表消失，中繼開始 `Connection refused` 空轉。判分於靜默 5.2 s 後發旗 |
+| `q3` — 雙向欺騙 | 飛機被開到 rogue LZ（距目標 < 1 m），操作者顯示維持 `AUTO` 與 `link_ok`，分歧 136 m 持續 10.1 s → 發旗 |
+| `q0` — 直接指令注入 | 落點距目標 0.6 m，peak 30.0 m → 發旗 |
+
+`q2` 的崩潰機制與架構有關（arm64 的 float→int 是飽和轉換，不會自己 trap），
+但 `NAV_WAYPOINT` 搭配 `param1 = 1e10` 在此環境確實致命。
+換 branch 或換架構後請重新確認。
 
 ## 已知限制
 
