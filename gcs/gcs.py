@@ -6,13 +6,18 @@ housekeeping for a station that cannot be sure the aircraft still holds the
 plan. That re-upload is a window: everything in it crosses the link again.
 
 Every second this station publishes what it BELIEVES is happening. It has no
-way to check that belief against reality; it only knows what arrives over the
+way to check that belief against reality; it only knows what arrived over the
 link. Scoring compares this belief against ground truth taken straight off the
 simulator, so deceiving the operator is worth exactly as much as moving the
 aircraft.
+
+Exactly one thread reads the link. Everything else waits on the state that
+reader publishes, because two readers on one socket lose each other's messages
+and the mission upload is the first thing to break when they do.
 """
 import json
 import os
+import queue
 import threading
 import time
 import urllib.request
@@ -40,6 +45,8 @@ COPTER_MODES = {
     17: "BRAKE", 21: "SMART_RTL",
 }
 
+MISSION_Q = queue.Queue()
+
 
 def log(msg):
     print(f"[gcs] {msg}", flush=True)
@@ -56,6 +63,9 @@ class Belief:
             "link_ok": False, "alerts": [], "mission_seq": -1,
             "last_heartbeat": 0.0,
         }
+        self.custom_mode = None
+        self.fix_type = 0
+        self.sats = 0
 
     def update(self, **kw):
         with self.lock:
@@ -86,8 +96,54 @@ def publish_belief():
         time.sleep(1)
 
 
+def reader(m):
+    """The only thread that touches the socket."""
+    while True:
+        try:
+            msg = m.recv_match(blocking=True, timeout=5)
+        except Exception as exc:
+            log(f"link read error: {exc}")
+            time.sleep(1)
+            continue
+        if msg is None:
+            continue
+        t = msg.get_type()
+
+        if t == "HEARTBEAT":
+            BELIEF.custom_mode = msg.custom_mode
+            BELIEF.update(
+                last_heartbeat=time.time(),
+                armed=bool(msg.base_mode & MAV_MODE_FLAG_SAFETY_ARMED),
+                mode=COPTER_MODES.get(msg.custom_mode, f"MODE_{msg.custom_mode}"),
+            )
+        elif t == "GLOBAL_POSITION_INT":
+            BELIEF.update(
+                lat=msg.lat / 1e7, lon=msg.lon / 1e7,
+                agl=msg.relative_alt / 1000.0,
+            )
+        elif t == "GPS_RAW_INT":
+            BELIEF.fix_type = msg.fix_type
+            BELIEF.sats = msg.satellites_visible
+        elif t in ("MISSION_REQUEST", "MISSION_REQUEST_INT", "MISSION_ACK"):
+            MISSION_Q.put(msg)
+        elif t == "STATUSTEXT":
+            text = msg.text if isinstance(msg.text, str) else msg.text.decode()
+            if msg.severity <= mavutil.mavlink.MAV_SEVERITY_WARNING:
+                snap = BELIEF.snapshot()
+                BELIEF.update(alerts=(snap["alerts"] + [text])[-10:])
+                log(f"  ALERT: {text}")
+
+
+def drain_mission_q():
+    while not MISSION_Q.empty():
+        try:
+            MISSION_Q.get_nowait()
+        except queue.Empty:
+            break
+
+
 def load_mission(path):
-    """Parse QGC WPL 110 into (seq, frame, command, p1..p4, x, y, z, autocont)."""
+    """Parse QGC WPL 110 into mission items."""
     items = []
     with open(path) as fh:
         first = fh.readline()
@@ -110,17 +166,18 @@ def load_mission(path):
 
 def upload_mission(m, items):
     """Standard MAVLink mission upload. Every item crosses the link in the clear."""
+    drain_mission_q()
     m.mav.mission_count_send(m.target_system, m.target_component, len(items))
     deadline = time.time() + 30
     sent = set()
+    acked = False
     while time.time() < deadline and len(sent) < len(items):
-        req = m.recv_match(
-            type=["MISSION_REQUEST", "MISSION_REQUEST_INT", "MISSION_ACK"],
-            blocking=True, timeout=3,
-        )
-        if req is None:
+        try:
+            req = MISSION_Q.get(timeout=3)
+        except queue.Empty:
             continue
         if req.get_type() == "MISSION_ACK":
+            acked = True
             break
         it = items[req.seq]
         m.mav.mission_item_int_send(
@@ -131,8 +188,13 @@ def upload_mission(m, items):
         )
         sent.add(req.seq)
         BELIEF.update(mission_seq=req.seq)
-    ack = m.recv_match(type="MISSION_ACK", blocking=True, timeout=5)
-    log(f"mission uploaded ({len(sent)}/{len(items)} items, ack={bool(ack)})")
+    if not acked:
+        try:
+            acked = MISSION_Q.get(timeout=5).get_type() == "MISSION_ACK"
+        except queue.Empty:
+            pass
+    log(f"mission uploaded ({len(sent)}/{len(items)} items, ack={acked})")
+    return acked
 
 
 def send_cmd(m, cmd, *params):
@@ -142,27 +204,27 @@ def send_cmd(m, cmd, *params):
     )
 
 
-def wait_ready(m, timeout=240):
+def wait_ready(timeout=300):
     log("waiting for a position estimate")
     end = time.time() + timeout
     while time.time() < end:
-        msg = m.recv_match(type="GPS_RAW_INT", blocking=True, timeout=3)
-        if msg and msg.fix_type >= 3 and msg.satellites_visible >= 6:
-            log(f"  3D fix, {msg.satellites_visible} sats")
+        if BELIEF.fix_type >= 3 and BELIEF.sats >= 6:
+            log(f"  3D fix, {BELIEF.sats} sats")
             return True
+        time.sleep(1)
     return False
 
 
-def set_mode(m, custom_mode, name, timeout=15):
-    m.mav.set_mode_send(
-        m.target_system,
-        mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-        custom_mode,
-    )
+def set_mode(m, custom_mode, name, timeout=20):
     end = time.time() + timeout
     while time.time() < end:
-        hb = m.recv_match(type="HEARTBEAT", blocking=True, timeout=2)
-        if hb and hb.custom_mode == custom_mode:
+        m.mav.set_mode_send(
+            m.target_system,
+            mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+            custom_mode,
+        )
+        time.sleep(1)
+        if BELIEF.custom_mode == custom_mode:
             log(f"  mode = {name}")
             return True
     return False
@@ -172,38 +234,11 @@ def arm(m, timeout=60):
     end = time.time() + timeout
     while time.time() < end:
         send_cmd(m, mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 1)
-        hb = m.recv_match(type="HEARTBEAT", blocking=True, timeout=2)
-        if hb and hb.base_mode & MAV_MODE_FLAG_SAFETY_ARMED:
+        time.sleep(1)
+        if BELIEF.snapshot()["armed"]:
             log("  armed")
             return True
     return False
-
-
-def telemetry_pump(m):
-    """Absorb the downlink and keep the belief current. This is all we know."""
-    while True:
-        msg = m.recv_match(blocking=True, timeout=5)
-        if msg is None:
-            continue
-        t = msg.get_type()
-        if t == "HEARTBEAT":
-            BELIEF.update(
-                last_heartbeat=time.time(),
-                armed=bool(msg.base_mode & MAV_MODE_FLAG_SAFETY_ARMED),
-                mode=COPTER_MODES.get(msg.custom_mode, f"MODE_{msg.custom_mode}"),
-            )
-        elif t == "GLOBAL_POSITION_INT":
-            BELIEF.update(
-                lat=msg.lat / 1e7, lon=msg.lon / 1e7,
-                agl=msg.relative_alt / 1000.0,
-            )
-        elif t == "STATUSTEXT":
-            text = msg.text if isinstance(msg.text, str) else msg.text.decode()
-            if msg.severity <= mavutil.mavlink.MAV_SEVERITY_WARNING:
-                snap = BELIEF.snapshot()
-                alerts = (snap["alerts"] + [text])[-10:]
-                BELIEF.update(alerts=alerts)
-                log(f"  ALERT: {text}")
 
 
 def main():
@@ -218,7 +253,9 @@ def main():
     log(f"linked to system {m.target_system}")
     BELIEF.update(last_heartbeat=time.time())
 
-    if not wait_ready(m):
+    threading.Thread(target=reader, args=(m,), daemon=True).start()
+
+    if not wait_ready():
         log("no position estimate — giving up")
         return 1
 
@@ -235,14 +272,12 @@ def main():
 
     log(f"takeoff to {CRUISE_ALT}m")
     send_cmd(m, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, CRUISE_ALT)
-    time.sleep(12)
+    time.sleep(15)
 
     if not set_mode(m, COPTER_AUTO, "AUTO"):
         log("could not enter AUTO")
     send_cmd(m, mavutil.mavlink.MAV_CMD_MISSION_START)
     log("mission running")
-
-    threading.Thread(target=telemetry_pump, args=(m,), daemon=True).start()
 
     # Routine re-upload. Nothing about it is suspicious, and that is the problem.
     while True:

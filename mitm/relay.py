@@ -169,10 +169,12 @@ async def main():
 
     # The aircraft's udpin output only learns a return address once it has
     # received something, so announce ourselves before any traffic exists.
-    LINK.to_uav(mavlink.MAVLink_heartbeat_message(
+    packer = mavlink.MAVLink(None, srcSystem=254, srcComponent=190)
+    hb = packer.heartbeat_encode(
         mavlink.MAV_TYPE_GCS, mavlink.MAV_AUTOPILOT_INVALID, 0, 0,
         mavlink.MAV_STATE_ACTIVE,
-    ).pack(mavlink.MAVLink(None, srcSystem=254, srcComponent=190)))
+    )
+    LINK.to_uav(hb.pack(packer))
 
     server = await asyncio.start_server(handle_player, "0.0.0.0", TAP_PORT)
     log(f"tap open on tcp/{TAP_PORT} — attach here to take the link")

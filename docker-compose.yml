@@ -25,9 +25,13 @@ services:
     networks: [dronenet]
     depends_on: [watcher, viz]
 
+  # The simulator's udpin output remembers exactly one return address, so the
+  # relay and a direct q0 player cannot share it. These two services run only
+  # for the man-in-the-middle challenges:  docker compose --profile mitm up -d
   mitm:
     build: ./mitm
     image: thjcc/dronectf-mitm:1
+    profiles: [mitm]
     restart: unless-stopped
     environment:
       GCS_PORT: "14570"
@@ -42,6 +46,7 @@ services:
   gcs:
     build: ./gcs
     image: thjcc/dronectf-gcs:1
+    profiles: [mitm]
     restart: unless-stopped
     environment:
       UPLINK: "udpout:mitm:14570"

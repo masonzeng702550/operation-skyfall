@@ -65,10 +65,18 @@
 
 ```bash
 cp example.env .env && $EDITOR .env
+
+# 中間人題目（q2 / q3）
+docker compose --profile mitm up -d --build
+
+# 暖身題（q0）— 不啟動地面站與中繼
 docker compose up -d --build
 ```
 
 首次 build 會編譯 ArduPilot（10–20 分鐘）。之後啟動只要幾秒。
+
+> 模擬器的 `udpin` 輸出只記得**一個**回送位址，所以中繼與 q0 的直連選手
+> 不能共用它。`mitm` 與 `gcs` 因此掛在 `mitm` profile 下。
 
 **容器啟動後需等 60–90 秒**（EKF 初始化 + GPS 3D fix），地面站才會開始飛行。
 
