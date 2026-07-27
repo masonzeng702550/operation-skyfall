@@ -1,0 +1,89 @@
+# Deployment compose — pulls pre-built images from GHCR instead of compiling
+# ArduPilot from source. Runs on any amd64 or arm64 Docker host in seconds.
+#
+#   export OWNER=masonzeng702550          # your GHCR namespace (lowercase)
+#   cp example.env .env && edit .env      # FLAG_MODE, SOLVE_TOKEN, ports...
+#   docker compose -f docker-compose.deploy.yml pull
+#   docker compose -f docker-compose.deploy.yml up -d
+#
+# If the packages are private, log the host in first:
+#   echo "$GHCR_TOKEN" | docker login ghcr.io -u <user> --password-stdin
+#
+# Same topology and security invariant as the build compose: only the tap and
+# the dashboard are published; the simulator's MAVLink port and the watcher
+# (which holds the only flag) are not.
+
+services:
+  sitl:
+    image: ghcr.io/${OWNER:?set OWNER to your GHCR namespace}/skyfall-sitl:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      WATCHER_HOST: watcher
+      VIZ_HOST: viz
+      HOME_LOC: "-35.363262,149.165237,584,0"
+      SPEEDUP: "1"
+    networks: [dronenet]
+    depends_on: [watcher, viz]
+
+  mitm:
+    image: ghcr.io/${OWNER:?set OWNER to your GHCR namespace}/skyfall-mitm:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      GCS_PORT: "14570"
+      UAV_HOST: sitl
+      UAV_PORT: "14550"
+      TAP_PORT: "14580"
+    ports:
+      - "${TAP_PORT:-14580}:14580"
+    networks: [dronenet]
+    depends_on: [sitl]
+
+  gcs:
+    image: ghcr.io/${OWNER:?set OWNER to your GHCR namespace}/skyfall-gcs:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      UPLINK: "udpout:mitm:14570"
+      REUPLOAD_PERIOD_S: "60"
+      CRUISE_ALT: "30"
+      BELIEF_SINKS: "http://watcher:9000/api/belief,http://viz:8080/api/belief"
+    networks: [dronenet]
+    depends_on: [mitm]
+
+  watcher:
+    image: ghcr.io/${OWNER:?set OWNER to your GHCR namespace}/skyfall-watcher:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      FLAG_MODE: "${FLAG_MODE:-static}"
+      FLAG: "${FLAG:-}"
+      FLAG_SECRET: "${FLAG_SECRET:-}"
+      TEAM_ID: "${TEAM_ID:-solo}"
+      HOME_LAT: "-35.363262"
+      HOME_LON: "149.165237"
+      CAPTURE_LAT: "-35.363262"
+      CAPTURE_LON: "149.166537"
+      CAPTURE_RADIUS_M: "25"
+      MIN_AGL_M: "5"
+      HOLD_S: "10"
+      VIZ_URL: "http://viz:8080/api/solved"
+      SOLVE_TOKEN: "${SOLVE_TOKEN:-change-me-per-deployment}"
+    networks: [dronenet]
+    # Deliberately NOT published.
+
+  viz:
+    image: ghcr.io/${OWNER:?set OWNER to your GHCR namespace}/skyfall-viz:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      HOME_LAT: "-35.363262"
+      HOME_LON: "149.165237"
+      TARGET_LAT: "-35.363262"
+      TARGET_LON: "149.166537"
+      TARGET_RADIUS_M: "25"
+      DIVERGENCE_M: "50"
+      SOLVE_TOKEN: "${SOLVE_TOKEN:-change-me-per-deployment}"
+    ports:
+      - "${VIZ_PORT:-8080}:8080"
+    networks: [dronenet]
+
+networks:
+  dronenet:
+    driver: bridge

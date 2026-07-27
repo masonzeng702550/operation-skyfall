@@ -179,7 +179,34 @@ for m in tap.decode(UPLINK, data):
 
 ## 部署
 
-每隊一份獨立 stack,隊伍之間網路不可互達:
+### 用預建映像(不編譯,秒起)
+
+CI（`.github/workflows/publish-images.yml`）會把五個服務建成 amd64 + arm64
+多架構映像推到 GHCR，部署主機直接拉，不用花 10–20 分鐘編譯 ArduPilot:
+
+```bash
+export OWNER=masonzeng702550          # 你的 GHCR namespace（小寫）
+cp example.env .env && $EDITOR .env    # FLAG_MODE / SOLVE_TOKEN / 埠
+docker compose -f docker-compose.deploy.yml pull
+docker compose -f docker-compose.deploy.yml up -d
+```
+
+若 GHCR 套件是 private，部署主機需先登入:
+
+```bash
+echo "$GHCR_TOKEN" | docker login ghcr.io -u <user> --password-stdin
+```
+
+### 從原始碼編譯（開發／離線）
+
+```bash
+cp example.env .env && $EDITOR .env
+docker compose up -d --build
+```
+
+### 多隊
+
+每隊一份獨立 stack,隊伍之間網路不可互達（可搭配上面任一 compose）:
 
 ```bash
 for n in $(seq -w 1 20); do
@@ -189,7 +216,8 @@ for n in $(seq -w 1 20); do
   FLAG_SECRET="$THJCC_SECRET" \
   TEAM_ID="team$n" \
   SOLVE_TOKEN="$(openssl rand -hex 16)" \
-  docker compose -p team$n up -d
+  OWNER=masonzeng702550 \
+  docker compose -f docker-compose.deploy.yml -p team$n up -d
 done
 ```
 

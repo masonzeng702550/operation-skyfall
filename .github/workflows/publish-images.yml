@@ -1,0 +1,70 @@
+name: publish images
+
+# Build the five range images for amd64 and arm64 and push them to GHCR, so a
+# deploy host can pull and run without compiling ArduPilot (10-20 min from
+# source). Uses the built-in GITHUB_TOKEN — no personal token or extra scope
+# needed to push to this repo's own container registry.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "sitl/**"
+      - "mitm/**"
+      - "gcs/**"
+      - "watcher/**"
+      - "viz/**"
+      - ".github/workflows/publish-images.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: sitl
+            context: ./sitl
+            build_args: ARDUPILOT_BRANCH=Copter-4.6.3
+          - service: mitm
+            context: ./mitm
+          - service: gcs
+            context: ./gcs
+          - service: watcher
+            context: ./watcher
+          - service: viz
+            context: ./viz
+    steps:
+      - uses: actions/checkout@v4
+
+      # arm64 layers build under emulation on this amd64 runner. Fast for the
+      # Python images; the ArduPilot compile (sitl) is the slow one.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase owner
+        id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: ${{ matrix.build_args }}
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.name }}/skyfall-${{ matrix.service }}:latest
+            ghcr.io/${{ steps.owner.outputs.name }}/skyfall-${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
