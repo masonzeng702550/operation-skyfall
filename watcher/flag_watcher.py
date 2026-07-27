@@ -41,7 +41,7 @@ FLAG_MODE = os.environ.get("FLAG_MODE", "static").lower()
 FLAG_SECRET = os.environ.get("FLAG_SECRET", "")
 TEAM_ID = os.environ.get("TEAM_ID", "solo")
 
-FLAG_BODY = "th3_l1nk_b3l0ng5_t0_wh03v3r_s1ts_1n_th3_m1ddl3"
+FLAG_BODY = "h1j4ck3d_th3_1nb0und_dr0n3_b3f0r3_1t_r34ch3d_0ur_c4mp"
 
 
 def issue_flag():
@@ -63,16 +63,23 @@ HTTP_PORT = int(os.environ.get("HTTP_PORT", "9000"))
 HOME_LAT = float(os.environ.get("HOME_LAT", "-35.363262"))
 HOME_LON = float(os.environ.get("HOME_LON", "149.165237"))
 
-# --- what counts as being in the middle ------------------------------------
-# The aircraft must genuinely be flying, so a forged downlink over a parked
-# vehicle does not qualify.
+# --- what counts as winning ------------------------------------------------
+# The enemy drone is inbound; its mission holds it over its approach, threatening
+# the camp. Deceiving the enemy operator is not enough — a frozen telemetry feed
+# leaves the REAL aircraft flying its real path straight at us. To score you have
+# to actually seize the link and rewrite where the aircraft goes, pulling it off
+# its approach and onto our capture point. That takes genuine control of the
+# vehicle, not just a lie told to its operator.
+CAPTURE_LAT = float(os.environ.get("CAPTURE_LAT", "-35.363262"))
+CAPTURE_LON = float(os.environ.get("CAPTURE_LON", "149.166537"))
+# The capture point sits well off the enemy's approach pattern, so the aircraft
+# only reaches it if someone flies it there — never on its own mission.
+CAPTURE_RADIUS_M = float(os.environ.get("CAPTURE_RADIUS_M", "25"))
+# It must genuinely be airborne, not spoofed from the ground.
 MIN_AGL_M = float(os.environ.get("MIN_AGL_M", "5"))
-# How far the two pictures must disagree. Well outside GPS noise and outside
-# anything a lagging display could explain away.
-DIVERGENCE_M = float(os.environ.get("DIVERGENCE_M", "50"))
-# And it has to hold — a single frame of disagreement is a glitch, not control.
-HOLD_S = float(os.environ.get("HOLD_S", "10"))
-# Belief older than this means the station has stopped reporting entirely.
+# And held there — a fly-through is not control, loitering under your command is.
+HOLD_S = float(os.environ.get("HOLD_S", "8"))
+# Belief older than this means the station has stopped reporting (dashboard only).
 BELIEF_STALE_S = float(os.environ.get("BELIEF_STALE_S", "5"))
 
 VIZ_URL = os.environ.get("VIZ_URL", "http://viz:8080/api/solved")
@@ -143,13 +150,19 @@ def solve(evidence):
             return
         STATE.solved = True
     log("=" * 62)
-    log(f"SOLVED — the operator is watching a fiction: {FLAG}")
+    log(f"SOLVED — the inbound drone was rewritten onto our capture point: {FLAG}")
     log("=" * 62)
     release_to_dashboard(evidence)
 
 
 def score():
-    """Watch for a sustained disagreement the operator has no sign of."""
+    """Win when the REAL aircraft has been flown to our capture point and held.
+
+    This is deliberately measured against ground truth off the simulator, not
+    against what the operator believes. Freezing or forging the downlink moves
+    the operator's picture but not the aircraft, so it never brings the vehicle
+    here — only actually taking the link and steering does.
+    """
     last_reason = None
     while True:
         time.sleep(0.5)
@@ -159,22 +172,17 @@ def score():
                 return
 
         reason = None
-        gap = None
+        dist = None
         if truth["lat"] is None:
             reason = "no ground truth yet"
-        elif not belief or belief.get("lat") is None:
-            reason = "station has not reported a position"
-        elif time.time() - belief_at > BELIEF_STALE_S:
-            reason = "station has gone quiet"
-        elif not belief.get("link_ok"):
-            reason = "station knows the link is down"
         elif not truth["armed"] or truth["agl"] < MIN_AGL_M:
-            reason = f"aircraft is not flying (agl {truth['agl']:.1f} m)"
+            reason = f"aircraft is not airborne (agl {truth['agl']:.1f} m)"
         else:
-            gap = haversine_m(truth["lat"], truth["lon"],
-                              belief["lat"], belief["lon"])
-            if gap < DIVERGENCE_M:
-                reason = f"pictures still agree ({gap:.0f} m < {DIVERGENCE_M:.0f} m)"
+            dist = haversine_m(truth["lat"], truth["lon"],
+                               CAPTURE_LAT, CAPTURE_LON)
+            if dist > CAPTURE_RADIUS_M:
+                reason = (f"aircraft still on its own path "
+                          f"({dist:.0f} m from the capture point)")
 
         if reason:
             if STATE.holding_since is not None:
@@ -187,15 +195,13 @@ def score():
         last_reason = None
         if STATE.holding_since is None:
             STATE.holding_since = time.time()
-            log(f"divergence established at {gap:.0f} m — timing the hold")
+            log(f"aircraft reached the capture point ({dist:.0f} m) — timing the hold")
         held = time.time() - STATE.holding_since
         if held >= HOLD_S:
             solve({
                 "truth_lat": round(truth["lat"], 7),
                 "truth_lon": round(truth["lon"], 7),
-                "belief_lat": round(belief["lat"], 7),
-                "belief_lon": round(belief["lon"], 7),
-                "divergence_m": round(gap, 1),
+                "dist_to_capture_m": round(dist, 1),
                 "held_s": round(held, 1),
             })
             return
@@ -268,9 +274,9 @@ async def status_handler(request):
 def main():
     log(f"flag mode = {FLAG_MODE}"
         + (f" (team {TEAM_ID})" if FLAG_MODE == "dynamic" else ""))
-    log(f"objective: >= {DIVERGENCE_M:.0f} m between truth and belief, "
-        f"aircraft above {MIN_AGL_M:.0f} m, station reporting a healthy link, "
-        f"held >= {HOLD_S:.0f} s")
+    log(f"objective: fly the real aircraft to the capture point "
+        f"({CAPTURE_LAT}, {CAPTURE_LON}) within {CAPTURE_RADIUS_M:.0f} m, "
+        f"above {MIN_AGL_M:.0f} m, held >= {HOLD_S:.0f} s")
 
     threading.Thread(target=truth_thread, daemon=True).start()
     threading.Thread(target=score, daemon=True).start()

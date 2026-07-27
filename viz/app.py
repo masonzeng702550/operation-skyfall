@@ -115,6 +115,12 @@ class State:
                 haversine_m(truth["lat"], truth["lon"], b_lat, b_lon), 1)
         else:
             payload["divergence_m"] = None
+        # Distance of the REAL aircraft to the capture point — the win metric.
+        if truth["lat"] is not None:
+            payload["capture_dist_m"] = round(
+                haversine_m(truth["lat"], truth["lon"], TGT_LAT, TGT_LON), 1)
+        else:
+            payload["capture_dist_m"] = None
         payload["verdict"] = verdict_for(truth, belief, payload)
         return payload
 
@@ -124,15 +130,17 @@ def verdict_for(truth, belief, payload):
         return "OBJECTIVE MET"
     if not truth["connected"]:
         return "NO TELEMETRY"
-    b_lat = belief.get("lat")
-    if (b_lat is not None and truth["lat"] is not None
+    cd = payload.get("capture_dist_m")
+    if cd is not None and cd <= TGT_RADIUS_M:
+        return "DRONE ON CAPTURE POINT"
+    # The operator being fed a frozen/forged feed is worth surfacing, but it is
+    # not the objective — the aircraft still has to be brought in.
+    if (belief.get("lat") is not None and truth["lat"] is not None
             and payload["divergence_m"] is not None
             and payload["divergence_m"] >= DIVERGENCE_M
             and belief.get("link_ok")):
-        return "OPERATOR DECEIVED"
-    if truth["lat"] is not None and not truth["in_envelope"]:
-        return "OUTSIDE AUTHORISED ENVELOPE"
-    return "NOMINAL"
+        return "OPERATOR DECEIVED — DRONE STILL INBOUND"
+    return "ENEMY DRONE INBOUND"
 
 
 STATE = State()

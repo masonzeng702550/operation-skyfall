@@ -311,10 +311,20 @@ def main():
 
     log(f"connecting {UPLINK}")
     m = mavutil.mavlink_connection(UPLINK, source_system=255, source_component=190)
-    m.mav.heartbeat_send(
-        mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0
-    )
-    m.wait_heartbeat()
+    # Keep announcing until the aircraft answers. A single heartbeat then a
+    # blocking wait hangs forever if that packet is lost — which happens on a
+    # racy startup (the relay not yet bound) and left the station dead until a
+    # manual restart. Re-send and re-wait until the first heartbeat arrives.
+    hb = None
+    while hb is None:
+        m.mav.heartbeat_send(
+            mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+            0, 0, 0,
+        )
+        hb = m.recv_match(type="HEARTBEAT", blocking=True, timeout=3)
+    # wait_heartbeat() would have set these; recv_match does not.
+    m.target_system = hb.get_srcSystem()
+    m.target_component = hb.get_srcComponent()
     log(f"linked to system {m.target_system}")
     BELIEF.update(last_heartbeat=time.time())
 
