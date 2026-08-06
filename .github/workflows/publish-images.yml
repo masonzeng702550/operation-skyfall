@@ -28,17 +28,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # sitl compiles ArduPilot. amd64 is native (~15 min) and covers the
+          # realistic deploy target. arm64 here would run under QEMU for ~2.6 h
+          # and flakes; arm64 hosts should build from source instead, which is
+          # faster than pulling a QEMU-built image anyway.
           - service: sitl
             context: ./sitl
+            platforms: linux/amd64
             build_args: ARDUPILOT_BRANCH=Copter-4.6.3
           - service: mitm
             context: ./mitm
+            platforms: linux/amd64,linux/arm64
           - service: gcs
             context: ./gcs
+            platforms: linux/amd64,linux/arm64
           - service: watcher
             context: ./watcher
+            platforms: linux/amd64,linux/arm64
           - service: viz
             context: ./viz
+            platforms: linux/amd64,linux/arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -60,11 +69,13 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platforms }}
           push: true
           build-args: ${{ matrix.build_args }}
           tags: |
             ghcr.io/${{ steps.owner.outputs.name }}/skyfall-${{ matrix.service }}:latest
             ghcr.io/${{ steps.owner.outputs.name }}/skyfall-${{ matrix.service }}:${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          # No gha cache: mode=max over the multi-GB ArduPilot build blows past
+          # the 10 GB Actions cache limit, gets evicted mid-run, and the export
+          # then fails with "not_found". The app images rebuild in minutes
+          # anyway; sitl is slow either way.
